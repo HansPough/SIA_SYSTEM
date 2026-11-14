@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Transfer Slips (TS){% endblock %}
+{% block content %}
+<div class="page-head"><h1>Transfer Slips (TS)</h1>
+  {% if current_role == 'warehouse_manager' %}
+  <a class="btn primary" href="{{ url_for('delivery.transfer_new') }}">+ Create transfer from reserved RF</a>
+  {% endif %}
+</div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search TS no., RF no. or shop...">
+  <select name="status"><option value="">Status: all</option>
+    {% for k, v in [('draft', 'Draft'), ('assigned', 'Assigned'), ('loaded', 'Loaded'),
+                    ('in_transit', 'In transit'), ('delivered', 'Delivered'),
+                    ('delivered_with_variance', 'Delivered with variance'), ('cancelled', 'Cancelled')] %}
+    <option value="{{ k }}" {{ 'selected' if f.get('status') == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>TS no.</th><th>Date</th><th>RF no.</th><th>To shop</th><th>Driver</th><th>Vehicle</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td class="nowrap">{{ r.ts_no }}</td><td>{{ (r.ts_date|string)[:10] }}</td><td class="nowrap">{{ r.rf_no }}</td>
+<td>{{ r.shop }}</td><td>{{ r.driver or '–' }}</td><td>{{ r.vehicle or '–' }}</td>
+<td><span class="badge {{ 'warn' if r.status in ['draft', 'assigned', 'loaded', 'in_transit'] }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td><a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.id) }}">Open</a></td></tr>
+{% else %}
+<tr><td colspan="8" class="muted">No transfer slips yet. Reserve stock in the RF queue, then create a transfer slip.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'delivery.transfer_list', f) }}
+</div>
+{% endblock %}

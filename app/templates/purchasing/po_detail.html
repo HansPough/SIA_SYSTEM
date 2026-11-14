@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Purchase Order {{ po.po_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Purchase Order {{ po.po_no }}</h1>
+  <span class="badge {{ 'warn' if po.status == 'draft' }}">{{ po.status|po_status }}</span>
+</div>
+{% if po.status == 'draft' %}
+<p class="note">The owner has approved this PO.
+{% if current_role == 'warehouse_manager' %}Send it to the supplier yourself (the system does not send email), then press
+<strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it to the supplier.{% endif %}</p>
+{% endif %}
+{% set d = load_document('PO', po.id) %}
+{% if d %}{% include 'print/_document_body.html' %}{% endif %}
+<details class="card no-print"><summary>Progress and details</summary>
+<dl class="info">
+  <div><dt>PO no.</dt><dd>{{ po.po_no }}</dd></div>
+  <div><dt>Date</dt><dd>{{ (po.po_date|string)[:10] }}</dd></div>
+  <div><dt>Supplier</dt><dd>{{ po.supplier_name }}{% if po.supplier_email %} &mdash; {{ po.supplier_email }}{% endif %}</dd></div>
+  <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=po.ref_id) }}">{{ po.ref_no }}</a></dd></div>
+  <div><dt>Expected date</dt><dd>{{ (po.expected_date|string)[:10] if po.expected_date else '–' }}</dd></div>
+  <div><dt>Approved by</dt><dd>{{ po.approved_by_name }}</dd></div>
+  <div><dt>Total</dt><dd>{{ po.total_amount|money }}</dd></div>
+</dl>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Qty ordered</th><th class="num">Unit price</th><th class="num">Amount</th><th class="num">Qty received</th></tr></thead>
+<tbody>
+{% for l in po.lines %}
+<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_ordered }}</td><td class="num">{{ l.unit_price|money }}</td>
+<td class="num">{{ l.amount|money }}</td><td class="num">{{ l.qty_received }}</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">This PO has no items.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+</details>
+<div class="actions">
+  {% if po.status == 'draft' and current_role == 'warehouse_manager' %}
+  <form method="post">
+    <button type="submit" name="action" value="mark_sent" class="btn primary">Sign &amp; mark as sent</button>
+  </form>
+  {% endif %}
+  {% if po.status == 'draft' and current_role in ['warehouse_manager', 'owner'] %}
+  <a class="btn secondary" href="{{ url_for('purchasing.po_edit', po_id=po.id) }}">Edit PO</a>
+  {% endif %}
+  {% if current_role in ['warehouse_manager', 'owner'] and po.status in ['draft', 'sent'] %}
+  <a class="btn danger" href="{{ url_for('purchasing.po_cancel', po_id=po.id) }}">Cancel PO</a>
+  {% endif %}
+  {% if current_role in ['warehouse_manager', 'warehouse_staff'] and po.status in ['sent', 'partially_received'] %}
+  <a class="btn primary" href="{{ url_for('delivery.receiving_check', po_id=po.id) }}">Receive goods</a>
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('purchasing.po_list') }}">Back</a>
+</div>
+{% endblock %}

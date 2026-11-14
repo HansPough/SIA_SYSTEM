@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="login card">
+  <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="{{ company }}" class="login-logo">
+  <h1>{{ company|upper }}</h1>
+  <p class="sub">Inventory &amp; Operations</p>
+  <form method="post" action="{{ url_for('auth.login', next=next) }}">
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <div class="field"><label for="username">Username</label>
+      <input id="username" name="username" type="text" value="{{ username }}" autocomplete="username" autofocus required></div>
+    <div class="field" style="margin-top:12px"><label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn primary" type="submit" style="width:100%;margin-top:18px">Log in</button>
+  </form>
+  {% if dev_login %}
+  <hr style="border:0;border-top:1px solid #e2e8f0;margin:22px 0">
+  <p class="muted" style="font-size:12px;text-align:center;margin-bottom:12px">Development preview — demo accounts use the password <strong>changeme</strong>.</p>
+  <div class="role-buttons">
+    {% for code, label in role_labels.items() %}<a class="btn small" href="{{ url_for('auth.dev_role', role=code) }}">{{ label }}</a>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

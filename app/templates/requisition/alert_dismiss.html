@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Dismiss Alert {{ alert.alert_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Dismiss Alert {{ alert.alert_no }}</h1><span class="badge warn">Active</span></div>
+<p class="note">The reason is saved with the alert. If an item is still low, a new alert appears the next time its
+stock changes &mdash; a dismissed alert is never reopened by itself.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('Alert', 'alert_no', 'text', value=alert.alert_no, readonly=True) }}
+  {{ m.field('Shop', 'shop', 'text', value=alert.shop, readonly=True) }}
+  {{ m.field('Reason for dismissing', 'dismissed_reason', 'textarea', value=f.get('dismissed_reason', ''),
+             required=True, col=2, help='for example: slow-moving item, or stock is already on the way') }}
+</div>
+<div class="actions">
+  <button type="submit" name="action" value="dismiss_alert" class="btn danger">Dismiss alert</button>
+  <a class="btn ghost" href="{{ url_for('requisition.alert_detail', alert_id=alert.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

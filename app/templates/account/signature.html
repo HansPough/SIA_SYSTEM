@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}My Signature{% endblock %}
+{% block content %}
+<div class="page-head"><h1>My Signature</h1><span class="badge">{{ user.full_name }}</span></div>
+<p class="note">Draw your signature once with the mouse, pen or finger. It is stored on your account and stamped
+automatically, with your name from your account, when you sign. Already-signed documents keep the signature that was used at
+that time.</p>
+
+{% if user.signature_data %}
+<div class="card">
+  <h2 style="margin-top:0">Signature on file</h2>
+  <img class="signature-preview" src="{{ user.signature_data }}" alt="Saved signature">
+  <form method="post" onsubmit="return confirm('Remove your saved signature? Documents you already signed keep their signature.');">
+    <input type="hidden" name="action" value="remove">
+    <button type="submit" class="btn danger">Remove saved signature</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">{{ 'Draw a new signature' if user.signature_data else 'Draw your signature' }}</h2>
+  <canvas id="sig-pad" class="sig-pad" width="1280" height="480" aria-label="Signature drawing area"></canvas>
+  <div class="sig-tools">
+    <button type="button" id="sig-clear" class="btn small">Clear drawing</button>
+    <span class="muted">Use a smooth line. A PNG is saved with a transparent background.</span>
+  </div>
+  <form method="post" id="sig-form">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="signature_data" id="signature_data">
+    <button type="submit" class="btn primary">Save signature</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Or upload a picture</h2>
+  <p class="muted">Sign on white paper, take a photo or scan, and upload it (PNG or JPG, up to 2 MB). The white background is removed for you.</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="action" value="save">
+    <input type="file" name="signature_file" accept="image/png,image/jpeg" required>
+    <button type="submit" class="btn primary">Upload and save</button>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var canvas = document.getElementById("sig-pad");
+  if (!canvas) { return; }
+  var ctx = canvas.getContext("2d");
+  var ratio = 2;
+  var logicalW = 640, logicalH = 240;
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111111";
+
+  var drawing = false, dirty = false;
+
+  function point(e) {
+    var r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (logicalW / r.width),
+      y: (e.clientY - r.top) * (logicalH / r.height)
+    };
+  }
+  canvas.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    drawing = true;
+    dirty = true;
+    var p = point(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    if (canvas.setPointerCapture) { canvas.setPointerCapture(e.pointerId); }
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!drawing) { return; }
+    e.preventDefault();
+    var p = point(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  });
+  function stop() { drawing = false; }
+  canvas.addEventListener("pointerup", stop);
+  canvas.addEventListener("pointercancel", stop);
+  canvas.addEventListener("pointerleave", stop);
+
+  document.getElementById("sig-clear").addEventListener("click", function () {
+    ctx.clearRect(0, 0, logicalW, logicalH);
+    dirty = false;
+  });
+  document.getElementById("sig-form").addEventListener("submit", function (e) {
+    if (!dirty) {
+      e.preventDefault();
+      alert("Draw your signature first, or use the current signature.");
+      return;
+    }
+    document.getElementById("signature_data").value = canvas.toDataURL("image/png");
+  });
+})();
+</script>
+{% endblock %}

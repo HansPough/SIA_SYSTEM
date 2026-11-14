@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Create Transfer Slip{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Create Transfer Slip</h1></div>
+<p class="note">Choose a driver and vehicle for the reserved stock. Staff will check the load before the manager releases it.</p>
+{% if not drivers or not vehicles %}<p class="note">Add an active <a href="{{ url_for('delivery.driver_list') }}">driver</a> and <a href="{{ url_for('delivery.vehicle_list') }}">vehicle</a> to assign this transfer.</p>{% endif %}
+{% if selected %}
+<div class="card">
+  <h2>Reserved for {{ selected.rf_no }} · {{ selected.shop }}</h2>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Item</th><th class="num">Quantity to transfer</th></tr></thead>
+    <tbody>{% for line in reserved_lines %}<tr><td>{{ line.item_name }}<small>{{ line.item_code }}</small></td><td class="num">{{ line.qty }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <form method="post">
+    <input type="hidden" name="rf_id" value="{{ selected.id }}">
+    <div class="grid">
+      <div class="field"><label for="driver_id">Driver</label><select id="driver_id" name="driver_id" required><option value="">Choose a driver</option>
+        {% for d in drivers %}<option value="{{ d.id }}" {{ 'selected' if f.get('driver_id') == d.id|string }}>{{ d.full_name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="vehicle_id">Vehicle</label><select id="vehicle_id" name="vehicle_id" required><option value="">Choose a vehicle</option>
+        {% for v in vehicles %}<option value="{{ v.id }}" {{ 'selected' if f.get('vehicle_id') == v.id|string }}>{{ v.plate_no }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions"><button type="submit" class="btn primary">Create &amp; assign TS</button>
+      <a class="btn ghost" href="{{ url_for('inventory.rfqueue_review', rf_id=selected.id) }}">Back to requisition</a></div>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  {% if selected_rf %}<p class="muted">This requisition has no reserved stock ready for a new transfer, or a transfer is already in progress.</p>
+  {% else %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>RF no.</th><th>Shop</th><th class="num">Lines</th><th class="num">Units</th><th></th></tr></thead>
+    <tbody>{% for r in candidates %}<tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ r.shop }}</td><td class="num">{{ r.n_lines }}</td><td class="num">{{ r.qty }}</td><td><a class="btn small primary" href="{{ url_for('delivery.transfer_new', rf_id=r.id) }}">Create transfer</a></td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No reserved stock is ready for a new transfer.</td></tr>{% endfor %}</tbody>
+  </table></div>{% endif %}
+  <a class="btn ghost" href="{{ url_for('inventory.rfqueue_list') if selected_rf else url_for('delivery.transfer_list') }}">Back</a>
+</div>
+{% endif %}
+{% endblock %}

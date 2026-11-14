@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Edit PO {{ po.po_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Edit Purchase Order</h1><span class="badge">{{ po.po_no }}</span></div>
+<p class="note">Only a draft PO can be edited. The supplier, items and prices were set by the owner's approval; this
+page changes the expected delivery date and the printed terms.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}
+  {{ m.field('Supplier', 'supplier', 'text', value=po.supplier_name, readonly=True) }}
+  {{ m.field('REF no.', 'ref_no', 'text', value=po.ref_no, readonly=True) }}
+  {{ m.field('Total', 'total', 'text', value=po.total_amount|money, readonly=True) }}
+  {{ m.field('Expected delivery', 'expected_date', 'date',
+             value=f.get('expected_date', (po.expected_date|string)[:10] if po.expected_date else '')) }}
+  {{ m.field('Terms', 'terms', 'text', value=f.get('terms', po.terms or ''), col=2,
+             help='printed on the PO, for example: 30 days, delivered to warehouse') }}
+</div>
+<div class="actions">
+  <button type="submit" class="btn primary">Save changes</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.po_detail', po_id=po.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

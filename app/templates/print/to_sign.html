@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Documents to sign{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Documents to sign</h1><span class="badge">{{ rows|length }}</span></div>
+<p class="note">These were recorded by staff or by the system and still need your signature. Open one, check it, and press
+<strong>Sign</strong>. Your name comes from your account.</p>
+<div class="card">
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Document</th><th>No.</th><th>Date</th><th>Your line</th><th></th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td>{{ r.title }}</td><td class="nowrap">{{ r.doc_no }}</td><td>{{ r.doc_date }}</td><td>{{ r.line }}</td>
+<td><a class="btn small primary" href="{{ url_for('documents.view', doc_type=r.doc_type, doc_id=r.id) }}">Open and sign</a></td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">Nothing is waiting for your signature.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+</div>
+{% endblock %}

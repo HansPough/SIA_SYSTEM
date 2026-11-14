@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Discrepancy Reports{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Discrepancies</h1></div>
+{% set tab = 'suppliers' %}{% include 'delivery/_discrepancy_tabs.html' %}
+<p class="page-sub">Goods from a <strong>supplier</strong> that arrived short or were rejected when the warehouse received them. Each one is a discrepancy report (DR).</p>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search report, PO or supplier...">
+  <select name="status"><option value="">Status: all</option>
+    {% for k, v in [('open', 'Open'), ('follow_up', 'Follow-up'), ('resolved', 'Resolved')] %}
+    <option value="{{ k }}" {{ 'selected' if f.get('status') == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Report no.</th><th>Date</th><th>PO no.</th><th>Supplier</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td class="nowrap">{{ r.report_no }}</td><td>{{ (r.created_at|string)[:10] }}</td><td class="nowrap">{{ r.po_no }}</td>
+<td>{{ r.supplier_name }}</td>
+<td><span class="badge {{ 'warn' if r.status != 'resolved' }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td>{% if current_role == 'warehouse_manager' %}<a class="btn small" href="{{ url_for('delivery.discrepancy_detail', report_id=r.id) }}">Open</a>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="6" class="muted">No discrepancy reports.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'delivery.discrepancy_list', f) }}
+</div>
+{% endblock %}

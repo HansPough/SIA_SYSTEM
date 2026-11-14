@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Edit ROP Settings{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Edit ROP Settings</h1></div>
+<p class="note">Set a separate ROP for the shop and for the warehouse. Max level must be equal to or higher than ROP.
+A ROP of 0 means restock as soon as available stock reaches zero. "Suggested" uses the last 30 days of issues:
+average daily issue × lead time × 1.5, rounded up — a guide, not a rule.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('Item', 'item', 'text', value=data.item.item_name, readonly=True) }}
+  {{ m.field('Brand / size / ply', 'spec', 'text', value=(data.item.brand ~ ' ' ~ (data.item.size or '') ~ ' ' ~ (data.item.ply_rating or ''))|trim, readonly=True) }}
+  {{ m.field('Model / pattern', 'type', 'text', value=((data.item.model or '–') ~ ' / ' ~ (data.item.pattern or '–')), readonly=True) }}
+</div>
+<h2>Settings per location</h2>
+<div class="table-wrap"><table class="data lines">
+<thead><tr><th>Location</th><th class="num">Current stock</th><th class="num">Suggested</th><th>ROP</th><th>Max level</th><th>Lead time (days)</th><th>Rack</th></tr></thead>
+<tbody>
+{% for r in data.rows %}
+<tr><td>{{ r.location }} ({{ r.loc_type }})<input type="hidden" name="location_id[]" value="{{ r.location_id }}"></td>
+<td class="num">{{ r.on_hand }}</td>
+<td class="num" title="average {{ r.avg_daily }} per day">{{ r.suggested_rop }}</td>
+<td><input type="number" min="0" name="rop[]" value="{{ r.rop }}"></td>
+<td><input type="number" min="0" name="max_level[]" value="{{ r.max_level }}"></td>
+<td><input type="number" min="0" name="lead_time_days[]" value="{{ r.lead_time_days }}"></td>
+<td><input type="text" maxlength="30" name="rack[]" value="{{ r.rack or '' }}" placeholder="e.g. Rack A - Row 2"></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+<div class="actions">
+  <button type="submit" name="action" value="save_settings" class="btn primary">Save settings</button>
+  <a class="btn ghost" href="{{ url_for('inventory.rop_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Approve Suppliers and Prices{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Approve Suppliers and Prices</h1>
+  <span class="badge {{ 'warn' if appr.batch_pending }}">{{ 'Waiting for you' if appr.batch_pending else 'Decided' }}</span>
+</div>
+<p class="note">Each approved supplier gets its own <strong>purchase order</strong>, ready for the warehouse manager to send.
+This system does not send email: the warehouse manager sends the PO and marks it as sent.</p>
+<div class="card">
+<dl class="info">
+  <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=appr.ref_id) }}">{{ appr.ref_no }}</a></dd></div>
+  <div><dt>Suppliers</dt><dd>{{ appr.batch|length }}</dd></div>
+  <div><dt>Total</dt><dd>{{ appr.batch_total|money }}</dd></div>
+  <div><dt>Submitted by</dt><dd>{{ appr.submitted_by_name }}, {{ (appr.submitted_at|string)[:10] }}</dd></div>
+</dl>
+</div>
+
+<form method="post">
+{% for b in appr.batch %}
+<div class="card">
+  <h2 style="margin-top:0">{{ b.supplier_name }}
+    <span class="badge {{ 'warn' if b.decision == 'pending' }}">{{ b.decision|capitalize }}</span></h2>
+  <p class="muted">{{ 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') if b.basis == 'quotation' else 'Agreed price (regular supplier)' }}</p>
+  <div class="table-wrap"><table class="data">
+  <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr></thead>
+  <tbody>
+  {% for l in b.lines %}
+  <tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty }}</td>
+  <td class="num">{{ l.unit_price|money }}</td><td class="num">{{ l.amount|money }}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">No priced lines.</td></tr>
+  {% endfor %}
+  <tr><td colspan="3" class="num"><strong>Total</strong></td><td class="num"><strong>{{ b.total|money }}</strong></td></tr>
+  </tbody>
+  </table></div>
+  {% if b.decision == 'pending' %}
+  <div class="grid">
+    <div class="field span-1"><label for="decision_{{ b.id }}">Decision for {{ b.supplier_name }}<span class="req">*</span></label>
+      <select id="decision_{{ b.id }}" name="decision_{{ b.id }}" required>
+        <option value="">-- select --</option>
+        <option value="approve" {{ 'selected' if f.get('decision_%d'|format(b.id)) == 'approve' }}>Approve</option>
+        <option value="reject" {{ 'selected' if f.get('decision_%d'|format(b.id)) == 'reject' }}>Reject</option>
+      </select>
+    </div>
+  </div>
+  {% elif b.po %}
+  <p><a class="btn small primary" href="{{ url_for('purchasing.po_detail', po_id=b.po.id) }}">Open {{ b.po.po_no }}</a>
+    <span class="muted">{{ b.po.status|po_status }}</span></p>
+  {% elif b.remarks %}<p class="muted">Remarks: {{ b.remarks }}</p>{% endif %}
+</div>
+{% endfor %}
+
+{% if appr.open_lines or appr.dropped_lines %}
+<div class="card">
+  {% if appr.open_lines %}<p><strong>Still without a supplier:</strong>
+    {% for l in appr.open_lines %}{{ l.item_name }} ({{ l.open }}){{ ', ' if not loop.last }}{% endfor %}.
+    <span class="muted">The warehouse manager will order these separately once another supplier quotes.</span></p>{% endif %}
+  {% if appr.dropped_lines %}<p><strong>Dropped:</strong>
+    {% for l in appr.dropped_lines %}{{ l.item_name }} ({{ l.qty_dropped }}: {{ l.dropped_reason }}){{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if appr.batch_pending %}
+<div class="card">
+<div class="grid">
+  {{ m.field('Expected delivery', 'expected_date', 'date', value=f.get('expected_date', ''),
+             help='used on every PO you approve') }}
+  {{ m.field('PO terms', 'terms', 'text', value=f.get('terms', ''), col=2,
+             help='optional, printed on the PO (for example: 30 days, delivered to warehouse)') }}
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2,
+             help='required when rejecting') }}
+</div>
+{{ m.signing_box('Approving signs the REF and each new purchase order with your signature. Rejecting does not sign anything.') }}
+<div class="actions">
+  <button type="submit" name="action" value="submit_decision" class="btn primary">Submit decision</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.approval_list') }}">Back</a>
+</div>
+</div>
+{% else %}
+<div class="actions"><a class="btn ghost" href="{{ url_for('purchasing.approval_list') }}">Back</a></div>
+{% endif %}
+</form>
+{% endblock %}

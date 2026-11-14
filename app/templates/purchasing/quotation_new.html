@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Record Quotation {{ data.ref.ref_no }}{% endblock %}
+{% block content %}
+{% set selected = data.selected_supplier_id|string %}
+{% set qty_vals = f.getlist('qty_offered[]') %}
+{% set price_vals = f.getlist('unit_price[]') %}
+{% set lead_vals = f.getlist('lead_time_days[]') %}
+{% set qdate = f.get('quotation_date') or ((data.existing.quotation_date|string)[:10] if data.existing else data.today) %}
+{% set vdate = f.get('valid_until') or ((data.existing.valid_until|string)[:10] if data.existing and data.existing.valid_until else '') %}
+<div class="page-head"><h1>Record Quotation</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
+<p class="note">The supplier replies by email; enter the reply here. The supplier list includes every active supplier,
+with the ones this RFQ was sent to first. Unit prices are pre-filled from that supplier's agreed prices when they
+have them; change any price the supplier actually quoted. Saving the same supplier again replaces their earlier
+quotation for this RFQ.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('RFQ no.', 'rfq_no', 'text', value=data.rfq.rfq_no, readonly=True) }}
+  <div class="field span-1"><label for="supplier_id">Supplier<span class="req">*</span></label>
+    <select id="supplier_id" name="supplier_id" required>
+      <option value="">-- select --</option>
+      {% if data.suppliers|selectattr('on_rfq')|list %}
+      <optgroup label="Sent this RFQ">
+        {% for s in data.suppliers if s.on_rfq %}<option value="{{ s.id }}" {{ 'selected' if selected == s.id|string }}>{{ s.supplier_name }}{% if s.is_regular %} (regular){% endif %}</option>{% endfor %}
+      </optgroup>
+      {% endif %}
+      {% if data.suppliers|rejectattr('on_rfq')|list %}
+      <optgroup label="Other active suppliers (not recorded as sent this RFQ)">
+        {% for s in data.suppliers if not s.on_rfq %}<option value="{{ s.id }}" {{ 'selected' if selected == s.id|string }}>{{ s.supplier_name }}{% if s.is_regular %} (regular){% endif %}</option>{% endfor %}
+      </optgroup>
+      {% endif %}
+    </select>
+  </div>
+  {{ m.field('Supplier quotation ref.', 'quotation_ref', 'text',
+             value=f.get('quotation_ref') or (data.existing.quotation_ref if data.existing else '')) }}
+  {{ m.field('Quotation date', 'quotation_date', 'date', value=qdate, required=True) }}
+  {{ m.field('Valid until', 'valid_until', 'date', value=vdate) }}
+  {{ m.field('Notes', 'notes', 'textarea',
+             value=f.get('notes') or (data.existing.notes if data.existing else ''), col=2) }}
+</div>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data" id="quote-lines">
+<thead><tr><th>Item</th><th class="num">Qty requested</th><th>Qty offered</th><th>Unit price</th><th>Lead time (days)</th></tr></thead>
+<tbody>
+{% for l in data.ref_items %}
+{% set ex = data.existing_items.get(l.ref_item_id) %}
+{% set agreed = data.supplier_prices.get(selected, {}).get(l.item_id|string, '') %}
+{% set i = loop.index0 %}
+<tr data-item-id="{{ l.item_id }}"><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small>
+  <input type="hidden" name="ref_item_id[]" value="{{ l.ref_item_id }}"></td>
+<td class="num">{{ l.qty_requested }}</td>
+<td><input type="number" min="0" name="qty_offered[]" value="{{ qty_vals[i] if qty_vals|length > i else (ex.qty_offered if ex else (0 if data.existing else l.qty_requested)) }}"></td>
+<td><input type="number" min="0" step="0.01" name="unit_price[]" value="{{ price_vals[i] if price_vals|length > i else (ex.unit_price if ex else agreed) }}"></td>
+<td><input type="number" min="0" name="lead_time_days[]" value="{{ lead_vals[i] if lead_vals|length > i else (ex.lead_time_days if ex and ex.lead_time_days is not none else '') }}"></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+<p class="muted">Leave a line's quantity at 0 if the supplier did not offer that item. Changing the supplier reloads
+the price boxes from that supplier's agreed prices.</p>
+
+<div class="actions">
+  <button type="submit" name="action" value="save_quotation" class="btn primary">Save quotation</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+</div>
+</form>
+<script type="application/json" id="supplier-prices">{{ data.supplier_prices|tojson }}</script>
+{% endblock %}

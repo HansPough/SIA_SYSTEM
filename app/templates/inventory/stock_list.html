@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Stock{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Stock</h1></div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search item or code...">
+  {% if current_role == 'owner' %}<select name="location"><option value="">Location: all</option>{% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if f.get('location') == l.id|string }}>{{ l.code }} ({{ l.loc_type }})</option>{% endfor %}</select>{% endif %}
+  <select name="category"><option value="">Category: all</option>{% for c in ['tire','tube','flap','other'] %}<option value="{{ c }}" {{ 'selected' if f.get('category') == c }}>{{ c|capitalize }}</option>{% endfor %}</select>
+  <select name="status"><option value="">Status: all</option><option value="below" {{ 'selected' if f.get('status') == 'below' }}>Below ROP</option><option value="ok" {{ 'selected' if f.get('status') == 'ok' }}>OK</option><option value="out" {{ 'selected' if f.get('status') == 'out' }}>Out of stock</option></select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th>Location</th><th>Rack</th><th class="num">On hand</th><th class="num">Reserved</th><th class="num">Available</th><th class="num">ROP</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td>{{ r.item_name }}<small>{{ r.item_code }}</small></td><td>{{ r.location }}</td><td>{{ r.rack or '–' }}</td><td class="num">{{ r.on_hand }}</td><td class="num">{{ r.reserved }}</td><td class="num">{{ r.available }}</td><td class="num">{{ r.rop if r.rop is not none else '–' }}</td><td><span class="badge {{ 'warn' if r.status != 'OK' }}">{{ r.status }}</span></td><td><a class="btn small" href="{{ url_for('inventory.stock_detail', item_id=r.item_id) }}">Open</a></td></tr>
+{% else %}<tr><td colspan="9" class="muted">No stock found.</td></tr>{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'inventory.stock_list', f) }}
+</div>
+{% endblock %}

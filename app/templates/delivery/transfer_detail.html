@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Transfer Slip {{ ts.ts_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Transfer Slip {{ ts.ts_no }}</h1>
+  <span class="badge {{ 'warn' if ts.status in ['draft', 'assigned', 'loaded', 'in_transit'] }}">{{ ts.status|replace('_', ' ')|capitalize }}</span>
+</div>
+{% include 'print/_document_body.html' %}
+{% if ts.ar %}
+{% set d = load_document('AR', ts.ar.id) %}
+{% if d %}<h2 class="no-print">Acknowledgment receipt</h2>
+{% include 'print/_document_body.html' %}
+{% endif %}
+{% endif %}
+<details class="card no-print"><summary>Progress and details</summary>
+<dl class="info">
+  <div><dt>TS no.</dt><dd>{{ ts.ts_no }}</dd></div>
+  <div><dt>Date</dt><dd>{{ ((ts.released_at or ts.created_at)|string)[:10] }}</dd></div>
+  <div><dt>RF no.</dt><dd>{{ ts.rf_no }}</dd></div>
+  <div><dt>From</dt><dd>{{ ts.from_code }} &mdash; {{ ts.from_name }}</dd></div>
+  <div><dt>To</dt><dd>{{ ts.shop_code }} &mdash; {{ ts.shop_name }}</dd></div>
+  <div><dt>Driver</dt><dd>{{ ts.driver_name or '–' }}{% if ts.driver_contact %} ({{ ts.driver_contact }}){% endif %}</dd></div>
+  <div><dt>Vehicle</dt><dd>{% if ts.vehicle_plate %}{{ ts.vehicle_plate }}{% if ts.vehicle_type %} &mdash; {{ ts.vehicle_type }}{% endif %}{% else %}–{% endif %}</dd></div>
+  <div><dt>Prepared by</dt><dd>{{ ts.prepared_by_name }}</dd></div>
+  {% if ts.loaded_by_name %}<div><dt>Loaded by</dt><dd>{{ ts.loaded_by_name }}</dd></div>{% endif %}
+  {% if ts.released_by_name %}<div><dt>Released by</dt><dd>{{ ts.released_by_name }}, {{ (ts.released_at|string)[:10] }}</dd></div>{% endif %}
+  {% if ts.remarks %}<div><dt>Remarks</dt><dd>{{ ts.remarks }}</dd></div>{% endif %}
+</dl>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Qty on TS</th><th>Loaded</th><th class="num">Accepted at shop</th><th class="num">Rejected / short</th><th>Variance</th></tr></thead>
+<tbody>
+{% for l in ts.lines %}
+{% set rejected = (l.qty_expected - l.qty_received) if l.qty_expected is defined and l.qty_expected is not none and l.qty_received is not none else none %}
+<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_released }}</td><td>{{ 'Yes' if l.loaded else 'No' }}</td>
+<td class="num">{{ l.qty_received if l.qty_received is not none else '–' }}</td>
+<td class="num">{{ rejected if rejected is not none else '–' }}</td>
+<td>{% if rejected %}<span class="badge {{ 'warn' if not l.variance_resolved_at else '' }}">{{ 'Resolved' if l.variance_resolved_at else 'Open' }}</span>{% else %}–{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="6" class="muted">This TS has no items.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+{% if ts.ar %}
+<h2>Acknowledgment receipt</h2>
+<dl class="info">
+  <div><dt>AR no.</dt><dd>{{ ts.ar.ar_no }}</dd></div>
+  <div><dt>Received</dt><dd>{{ (ts.ar.received_at|string)[:16] }}</dd></div>
+  <div><dt>Variance</dt><dd>{{ 'Yes' if ts.ar.has_variance else 'No' }}</dd></div>
+  {% if ts.ar.remarks %}<div><dt>Remarks</dt><dd>{{ ts.ar.remarks }}</dd></div>{% endif %}
+</dl>
+{% endif %}
+
+</details>
+<div class="actions">
+  {% if current_role == 'warehouse_manager' and ts.status == 'draft' %}
+  <a class="btn primary" href="{{ url_for('delivery.transfer_assign', ts_id=ts.id) }}">Assign driver and vehicle</a>
+  {% endif %}
+  {% if current_role == 'warehouse_staff' and ts.status == 'assigned' %}
+  <a class="btn primary" href="{{ url_for('delivery.transfer_load', ts_id=ts.id) }}">Loading check</a>
+  {% endif %}
+  {% if current_role in ['warehouse_staff', 'warehouse_manager'] and ts.status == 'loaded' and not driver_sig %}
+  <a class="btn primary" href="{{ url_for('delivery.transfer_driver_sign', ts_id=ts.id) }}">Driver signs</a>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ts.status == 'loaded' %}
+  <a class="btn primary" href="{{ url_for('delivery.transfer_release', ts_id=ts.id) }}">Sign and release</a>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ts.status in ['draft', 'assigned', 'loaded'] %}
+  <form method="post" action="{{ url_for('delivery.transfer_cancel', ts_id=ts.id) }}">
+    <button type="submit" class="btn danger">Cancel TS</button>
+  </form>
+  {% endif %}
+  {% if current_role == 'shop_manager' and ts.status == 'in_transit' %}
+  <a class="btn primary" href="{{ url_for('delivery.delivery_receive', ts_id=ts.id) }}">Receive delivery</a>
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('delivery.delivery_list') if current_role == 'shop_manager' else url_for('delivery.transfer_list') }}">Back</a>
+</div>
+{% endblock %}

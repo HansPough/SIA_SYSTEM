@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}New User{% endblock %}
+{% block content %}
+<div class="page-head"><h1>New User</h1></div>
+<p class="note">Owner only. Drivers and suppliers do not have accounts. The password is stored as a hash and the user can log in immediately.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('Username', 'username', 'text', value=f.get('username', ''), required=True) }}
+  {{ m.field('Full name', 'full_name', 'text', value=f.get('full_name', ''), required=True) }}
+  {{ m.field('Email', 'email', 'email', value=f.get('email', '')) }}
+  <div class="field span-1"><label for="role_id">Role<span class="req">*</span></label>
+    <select id="role_id" name="role_id" required>
+      <option value="">-- select --</option>
+      {% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if f.get('role_id')|string == r.id|string }}>{{ r.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field span-1"><label for="location_id">Location</label>
+    <select id="location_id" name="location_id">
+      <option value="">-- none (owner) --</option>
+      {% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if f.get('location_id')|string == l.id|string }}>{{ l.code }} — {{ l.name }} ({{ l.loc_type }})</option>{% endfor %}
+    </select>
+    <small>Required for shop and warehouse roles.</small>
+  </div>
+  {{ m.field('Password', 'password', 'password', required=True, help='At least 8 characters.') }}
+  {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or not f), help=' user can log in') }}
+</div>
+<div class="actions">
+  <button type="submit" class="btn primary">Save user</button>
+  <a class="btn ghost" href="{{ url_for('admin.user_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

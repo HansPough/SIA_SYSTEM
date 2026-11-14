@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}New Replenishment Form{% endblock %}
+{% block content %}
+{% macro item_row(template=False) %}
+<tr class="line-row" {% if template %}data-row-template hidden{% endif %}>
+  <td><select name="item_id[]" data-fill-stock><option value="">-- select --</option>
+    {% for i in data.stock_items %}<option value="{{ i.id }}" data-onhand="{{ i.on_hand - i.reserved }}"
+      data-rop="{{ i.rop }}">{{ i.item_name }} (available {{ i.on_hand - i.reserved }})</option>{% endfor %}
+  </select></td>
+  <td><input type="number" name="on_hand[]" readonly></td>
+  <td><input type="number" name="rop[]" readonly></td>
+  <td><select name="reason[]"><option value="below_rop">Below ROP</option><option value="shortage">Shortage (waiting RF)</option></select></td>
+  <td><input type="number" min="1" name="qty_requested[]"></td>
+  <td><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+</tr>
+{% endmacro %}
+
+<div class="page-head"><h1>New Replenishment Form</h1><span class="badge">Draft</span></div>
+{% if alert %}
+<p class="note">Pre-filled from restock alert {{ alert.alert_no }}: suggested quantity is the max level minus
+available stock. Submitting this REF completes the alert.</p>
+{% else %}
+<p class="note">Order stock for the warehouse. The owner approves the supplier and price before a PO is made.</p>
+{% endif %}
+<form method="post" class="card">
+<input type="hidden" name="alert_id" value="{{ alert.id if alert else '' }}">
+<div class="grid">
+  {{ m.field('REF no.', 'ref_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('Warehouse', 'warehouse', 'text', value=data.warehouse.code ~ ' — ' ~ data.warehouse.name, readonly=True) }}
+  {{ m.field('Created by', 'created_by', 'text', value=created_by, readonly=True) }}
+  {{ m.field('From alert', 'alert_no', 'text', value=(alert.alert_no if alert else ''), readonly=True) }}
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
+</div>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data lines" id="lines">
+<thead><tr><th>Item</th><th class="num">Warehouse available</th><th class="num">ROP</th><th>Reason</th><th>Qty needed</th><th></th></tr></thead>
+<tbody>
+{% if alert %}
+  {% for it in alert.item_rows %}
+  <tr class="line-row">
+    <td>{{ it.item_name }}<small class="muted">{{ it.item_code }}</small><input type="hidden" name="item_id[]" value="{{ it.item_id }}"></td>
+    <td class="num">{{ it.current_qty }}</td>
+    <td class="num">{{ it.rop }}</td>
+    <td><select name="reason[]">
+      <option value="below_rop" {{ 'selected' if it.reason == 'below_rop' }}>Below ROP</option>
+      <option value="shortage" {{ 'selected' if it.reason == 'shortage' }}>Shortage (waiting RF)</option>
+    </select></td>
+    <td><input type="number" min="1" name="qty_requested[]" value="{{ it.suggested_qty }}"></td>
+    <td><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+  </tr>
+  {% endfor %}
+  {{ item_row(true) }}
+{% else %}
+  {{ item_row() }}
+{% endif %}
+</tbody>
+</table></div>
+<button type="button" class="btn small" data-add-row="lines">+ Add item</button>
+
+{{ m.signing_box("Sign & submit signs the replenishment form and sends it for approval. Save draft does not sign.") }}
+<div class="actions">
+  <button type="submit" name="action" value="save_draft" class="btn secondary">Save draft</button>
+  <button type="submit" name="action" value="submit_ref" class="btn primary">Sign &amp; submit REF</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

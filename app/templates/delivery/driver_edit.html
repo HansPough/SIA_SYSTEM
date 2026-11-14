@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Edit Driver {{ driver.full_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Edit Driver</h1></div>
+<p class="note">Drivers do not log in. They are only named on the TS. Set inactive to stop assigning them.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('Full name', 'full_name', 'text', value=f.get('full_name', driver.full_name), required=True) }}
+  {{ m.field('Contact no.', 'contact_no', 'text', value=f.get('contact_no', driver.contact_no or '')) }}
+  {{ m.field('License no.', 'license_no', 'text', value=f.get('license_no', driver.license_no or '')) }}
+  {{ m.field('Active', 'is_active', 'checkbox',
+             value=(f.get('is_active') or (not f and driver.is_active)), help=' can be assigned to a TS') }}
+</div>
+<div class="actions">
+  <button type="submit" name="action" value="save_driver" class="btn primary">Save driver</button>
+  <a class="btn ghost" href="{{ url_for('delivery.driver_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

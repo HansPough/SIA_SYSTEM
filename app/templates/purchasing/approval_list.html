@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Approvals</h1></div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search REF no. or supplier...">
+  <select name="decision"><option value="">Decision: all</option>
+    {% for k, v in [('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')] %}
+    <option value="{{ k }}" {{ 'selected' if f.get('decision') == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>REF no.</th><th>Supplier</th><th>Basis</th><th class="num">Total</th><th>Submitted</th><th>Decision</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td class="nowrap">{{ r.ref_no }}</td><td>{{ r.supplier_name }}</td>
+<td>{{ 'Quotation' if r.basis == 'quotation' else 'Agreed price' }}</td>
+<td class="num">{% if r.total is not none %}{{ r.total|money }}{% else %}–{% endif %}</td>
+<td>{{ (r.submitted_at|string)[:10] }}</td>
+<td><span class="badge {{ 'warn' if r.decision == 'pending' }}">{{ r.decision|capitalize }}</span></td>
+<td>{% if current_role == 'owner' %}<a class="btn small" href="{{ url_for('purchasing.approval_detail', approval_id=r.id) }}">Open</a>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="7" class="muted">No approvals yet.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'purchasing.approval_list', f) }}
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Review RF{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Review RF</h1><span class="badge">{{ rf.status|replace('_', ' ')|capitalize }}</span></div>
+{% include 'print/_document_body.html' %}
+{% if can_reserve %}<p class="note">Reserve what is available. Short items stay open and go to the restock alert. Next, create a transfer slip for the reserved stock.</p>{% endif %}
+<form method="post" class="card">
+{% if not can_reserve %}<details><summary>Reservation details</summary>{% else %}<h2>Stock to reserve</h2>{% endif %}
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Requested</th><th class="num">Delivered</th><th class="num">Reserved so far</th><th class="num">Warehouse on hand</th><th class="num">Reserved (all RFs)</th><th class="num">Available</th><th>Qty to reserve now</th></tr></thead>
+<tbody>
+{% for l in rf.lines %}
+<tr><td>{{ l.item_name }}<input type="hidden" name="rf_item_id[]" value="{{ l.rf_item_id }}"></td>
+<td class="num">{{ l.qty_requested }}</td><td class="num">{{ l.qty_delivered }}</td><td class="num">{{ l.qty_reserved }}</td>
+<td class="num">{{ l.on_hand }}</td><td class="num">{{ l.reserved_all }}</td><td class="num">{{ l.available }}</td>
+<td>{% if l.remaining > 0 and can_reserve %}<input type="number" min="0" max="{{ l.remaining }}" name="qty_reserve[]" value="{{ l.suggest }}"><small>{{ l.remaining }} still needed</small>{% elif l.remaining > 0 %}<span class="muted">{{ l.remaining }} still needed</span>{% else %}{% if can_reserve %}<input type="hidden" name="qty_reserve[]" value="0">{% endif %}<span class="muted">Fully reserved</span>{% endif %}</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% if not can_reserve %}</details>{% endif %}
+{% if can_reserve %}{{ m.signing_box('Reserving stock also signs this RF as noted by you (once).') }}{% endif %}
+<div class="actions">
+  {% if can_reserve %}<button type="submit" name="action" value="reserve_stock" class="btn primary">Reserve stock</button>{% else %}<span class="muted">{{ "Finish or cancel the current transfer before reserving more stock." if active_transfer and active_transfer.status in ['draft', 'assigned', 'loaded'] else "No additional stock needs to be reserved." }}</span>{% endif %}
+  {% if active_transfer %}<a class="btn secondary" href="{{ url_for('delivery.transfer_detail', ts_id=active_transfer.id) }}">Open {{ active_transfer.ts_no }}</a>{% elif has_reserved %}<a class="btn secondary" href="{{ url_for('delivery.transfer_new', rf_id=rf.id) }}">Create transfer slip</a>{% endif %}
+  <a class="btn ghost" href="{{ url_for('inventory.rfqueue_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

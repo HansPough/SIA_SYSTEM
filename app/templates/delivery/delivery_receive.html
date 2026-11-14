@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Receive Delivery {{ ts.ts_no }}{% endblock %}
+{% block content %}
+{% set accepted_vals = f.getlist('qty_accepted[]') %}
+{% set rejected_vals = f.getlist('qty_rejected[]') %}
+{% set reason_vals = f.getlist('variance_reason[]') %}
+<div class="page-head"><h1>Receive Delivery (AR)</h1><span class="badge warn">In transit</span></div>
+<div class="card">
+  <h2 style="margin-top:0">1. Check the TS</h2>
+  <dl class="info">
+    <div><dt>TS no.</dt><dd>{{ ts.ts_no }}</dd></div>
+    <div><dt>Released by</dt><dd>{% if released_sig %}{{ released_sig.signer_name }} &middot; {{ (released_sig.signed_at|string)[:16] }}{% else %}–{% endif %}</dd></div>
+    <div><dt>Driver</dt><dd>{{ ts.driver_name or '–' }}{% if driver_sig %} <span class="badge">signed</span>{% elif ts.driver_paper_reason %} <span class="badge warn">paper: {{ ts.driver_paper_reason }}</span>{% endif %}</dd></div>
+    <div><dt>Vehicle</dt><dd>{{ ts.vehicle_plate or '–' }}</dd></div>
+  </dl>
+  <p class="note" style="margin-bottom:0">Compare the delivery with the lines below. Count the items, tick <strong>Counted</strong> on each line, and
+  enter anything that is rejected or short. You cannot sign until every line is counted.</p>
+</div>
+<p class="note">Accepted + rejected must equal the quantity on the TS. Type accepted and rejected fills in, or type
+rejected and accepted fills in. Only accepted units go into shop stock; rejected/short units go back to warehouse
+stock and reopen the RF line so the warehouse can send them again.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('AR no.', 'ar_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}
+  {{ m.field('From', 'from_location', 'text', value=ts.from_code, readonly=True) }}
+  {{ m.field('Driver / vehicle', 'driver_vehicle', 'text',
+             value=(ts.driver_name or '–') ~ ' / ' ~ (ts.vehicle_plate or '–'), readonly=True) }}
+  {{ m.field('Date received', 'received_date', 'date', value=f.get('received_date', ''), required=True) }}
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
+</div>
+
+<h2>2. Count the items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Counted</th><th>Item</th><th class="num">Qty on TS</th><th>Accepted</th><th>Rejected</th><th>Variance reason (if rejected/short)</th></tr></thead>
+<tbody>
+{% for l in ts.lines %}
+{% set i = loop.index0 %}
+<tr data-receipt><td><input type="checkbox" name="counted[]" value="{{ l.ts_item_id }}" required
+       {{ 'checked' if l.ts_item_id|string in counted_ids }} aria-label="Counted {{ l.item_name }}"></td>
+<td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small>
+  <input type="hidden" name="ts_item_id[]" value="{{ l.ts_item_id }}">
+  <input type="hidden" name="qty_expected[]" value="{{ l.qty_released }}"></td>
+<td class="num">{{ l.qty_released }}</td>
+<td><input type="number" min="0" max="{{ l.qty_released }}" name="qty_accepted[]"
+           value="{{ accepted_vals[i] if accepted_vals|length > i else '' }}"></td>
+<td><input type="number" min="0" max="{{ l.qty_released }}" name="qty_rejected[]"
+           value="{{ rejected_vals[i] if rejected_vals|length > i else '' }}"></td>
+<td><input type="text" name="variance_reason[]"
+           value="{{ reason_vals[i] if reason_vals|length > i else '' }}" placeholder="only if rejected/short"></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+<h2>3. Sign</h2>
+{{ m.signing_box('Pressing the button signs the acknowledgment receipt and the TS, and adds the accepted quantity to your shop stock.') }}
+<div class="actions">
+  <button type="submit" name="action" value="sign_ar" class="btn primary">Sign &amp; confirm receipt</button>
+  <a class="btn ghost" href="{{ url_for('delivery.delivery_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

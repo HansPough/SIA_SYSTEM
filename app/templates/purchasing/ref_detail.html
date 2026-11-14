@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Replenishment Form {{ ref.ref_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Replenishment Form {{ ref.ref_no }}</h1>
+  <span class="badge {{ 'warn' if ref.status in ['draft', 'submitted', 'rfq_sent', 'for_approval'] }}">{{ 'Partly ordered' if ref.partly_ordered else ref.status|replace('_', ' ')|capitalize }}</span>
+</div>
+{% set d = load_document('REF', ref.id) %}
+{% if d %}{% include 'print/_document_body.html' %}{% endif %}
+<div class="card no-print">
+
+<h2>Progress</h2>
+<h3 class="sub">Items</h3>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Requested</th><th>Reason</th><th>For RF</th><th>Ordered on</th><th class="num">Dropped</th><th class="num">Still open</th><th class="num">Received</th></tr></thead>
+<tbody>
+{% for l in ref.lines %}
+<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_requested }}</td><td>{{ l.reason|replace('_', ' ')|capitalize }}</td>
+<td>{% if l.rf_no %}{{ l.rf_no }}{% else %}–{% endif %}</td>
+<td>{{ l.po_nos|join(', ') if l.po_nos else ('pending approval' if l.pending else '–') }}</td>
+<td class="num">{% if l.qty_dropped %}{{ l.qty_dropped }}<small class="muted">{{ l.dropped_reason }}</small>
+  {% if current_role == 'warehouse_manager' and ref.status not in ['draft', 'closed', 'cancelled'] %}
+  <form method="post" action="{{ url_for('purchasing.ref_restore', ref_id=ref.id) }}" class="inline-row">
+    <input type="hidden" name="ref_item_id" value="{{ l.ref_item_id }}">
+    <button type="submit" class="btn small">Restore</button></form>{% endif %}
+  {% else %}–{% endif %}</td>
+<td class="num">{% if l.open %}<strong>{{ l.open }}</strong>
+  {% if current_role == 'warehouse_manager' and ref.status in ['submitted', 'rfq_sent'] and not ref.approvals|selectattr('decision', 'equalto', 'pending')|list %}
+  <form method="post" action="{{ url_for('purchasing.ref_drop', ref_id=ref.id) }}" class="inline-row">
+    <input type="hidden" name="ref_item_id" value="{{ l.ref_item_id }}">
+    <input type="text" name="reason" maxlength="200" placeholder="give up: real reason" minlength="5" aria-label="Reason to drop {{ l.item_name }}" required>
+    <button type="submit" class="btn small" onclick="return confirm('Give up on this item? If it is still below its reorder point it will show again in the restock alerts.')">Give up</button></form>{% endif %}
+  {% else %}–{% endif %}</td>
+<td class="num">{{ l.qty_received }}</td></tr>
+{% else %}
+<tr><td colspan="8" class="muted">This form has no items.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% if ref.partly_ordered %}<p class="note">Some items are ordered and some are still open. Choose suppliers again for the open items when you have a quotation.</p>{% endif %}
+
+<h2>RFQs and quotations</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>RFQ no.</th><th>Supplier</th><th>Sent</th><th>Replied</th><th class="num">Total quoted</th></tr></thead>
+<tbody>
+{% for r in ref.rfq_rows %}
+<tr><td class="nowrap">{{ r.rfq_no }}</td><td>{{ r.supplier_name }}</td>
+<td>{{ (r.sent_at|string)[:10] if r.sent_at else '–' }}</td>
+<td>{{ (r.replied_at|string)[:10] if r.replied_at else '–' }}</td>
+<td class="num">{% if r.total_quoted is not none %}{{ r.total_quoted|money }}{% else %}–{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">No RFQ yet. Create one, or use a regular supplier's agreed price.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+{% if ref.approvals %}
+<h2>Suppliers and orders</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Supplier</th><th>Basis</th><th>Decision</th><th>Purchase order</th></tr></thead>
+<tbody>
+{% for a in ref.approvals %}
+{% set po = ref.pos|selectattr('approval_id', 'equalto', a.id)|first %}
+<tr><td>{{ a.supplier_name }}</td>
+<td>{{ 'Quotation' if a.basis == 'quotation' else 'Agreed price' }}</td>
+<td><span class="badge {{ 'warn' if a.decision == 'pending' }}">{{ a.decision|capitalize }}</span>
+  {% if current_role == 'owner' and a.decision == 'pending' %} <a class="btn small" href="{{ url_for('purchasing.approval_detail', approval_id=a.id) }}">decide</a>{% endif %}</td>
+<td>{% if po %}<a href="{{ url_for('purchasing.po_detail', po_id=po.id) }}">{{ po.po_no }}</a>
+  &mdash; {{ po.status|po_status }}, {{ (po.total_amount if po.total_amount else po.lines_total)|money }}{% else %}–{% endif %}</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% endif %}
+</div>
+<details class="card no-print"><summary>Form details</summary>
+<dl class="info">
+  <div><dt>REF no.</dt><dd>{{ ref.ref_no }}</dd></div>
+  <div><dt>Date</dt><dd>{{ ((ref.submitted_at or ref.created_at)|string)[:10] }}</dd></div>
+  <div><dt>Warehouse</dt><dd>{{ ref.warehouse }} &mdash; {{ ref.warehouse_name }}</dd></div>
+  <div><dt>Created by</dt><dd>{{ ref.created_by_name }}</dd></div>
+  <div><dt>Status</dt><dd>{{ ref.status|replace('_', ' ')|capitalize }}</dd></div>
+  {% if ref.remarks %}<div><dt>Remarks</dt><dd>{{ ref.remarks }}</dd></div>{% endif %}
+  {% if ref.cancel_reason %}<div><dt>Cancelled because</dt><dd>{{ ref.cancel_reason }}</dd></div>{% endif %}
+</dl>
+</details>
+<div class="actions">
+  {% if current_role == 'warehouse_manager' and ref.status == 'draft' %}
+  <form method="post">
+    <button type="submit" name="action" value="submit_ref" class="btn primary">Sign &amp; submit REF</button>
+  </form>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ref.status == 'submitted' and not ref.rfq %}
+  <a class="btn primary" href="{{ url_for('purchasing.rfq_new', ref_id=ref.id) }}">Create RFQ</a>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ref.rfq and ref.status in ['submitted', 'rfq_sent'] %}
+  <a class="btn secondary" href="{{ url_for('purchasing.quotation_new', ref_id=ref.id) }}">Record quotation</a>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ref.rfq and ref.status in ['submitted', 'rfq_sent'] and ref.has_open %}
+  <a class="btn secondary" href="{{ url_for('purchasing.rfq_new', ref_id=ref.id) }}">Ask more suppliers (new RFQ)</a>
+  {% endif %}
+  {% if current_role == 'warehouse_manager' and ref.status in ['submitted', 'rfq_sent'] and ref.has_open %}
+  <a class="btn primary" href="{{ url_for('purchasing.ref_compare', ref_id=ref.id) }}">Choose suppliers and send for approval</a>
+  {% endif %}
+  {% if can_cancel %}
+  <a class="btn danger" href="{{ url_for('purchasing.ref_cancel', ref_id=ref.id) }}">Cancel REF</a>
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_list') }}">Back</a>
+</div>
+{% endblock %}

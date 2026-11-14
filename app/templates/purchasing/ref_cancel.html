@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Cancel REF {{ ref.ref_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Cancel REF {{ ref.ref_no }}</h1>
+  <span class="badge warn">{{ ref.status|replace('_', ' ')|capitalize }}</span>
+</div>
+<p class="note">Cancelling closes the form and the RFQ. A cancelled REF cannot be reopened; raise a new one if
+the warehouse still needs the stock. A form that is already approved or receiving cannot be cancelled.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('REF no.', 'ref_no', 'text', value=ref.ref_no, readonly=True) }}
+  {{ m.field('Warehouse', 'warehouse', 'text', value=ref.warehouse, readonly=True) }}
+  {{ m.field('Status', 'status', 'text', value=ref.status|replace('_', ' ')|capitalize, readonly=True) }}
+  {{ m.field('Reason for cancelling', 'cancel_reason', 'textarea', value=f.get('cancel_reason', ''),
+             required=True, col=2, help='for example: raised twice, or the supplier cannot supply') }}
+</div>
+<div class="actions">
+  <button type="submit" name="action" value="cancel_ref" class="btn danger">Cancel REF</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=ref.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

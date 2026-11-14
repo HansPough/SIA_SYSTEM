@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Driver signature {{ ts.ts_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Driver signature</h1><span class="badge">{{ ts.ts_no }}</span></div>
+<p class="note">Hand the device to the driver. The driver signs once, after the loading check. The name below comes from the
+driver assigned to this transfer slip. Your name is recorded as the person who held the device.</p>
+
+<div class="card">
+  <dl class="info">
+    <div><dt>Driver</dt><dd><strong>{{ ts.driver_name or '–' }}</strong></dd></div>
+    <div><dt>Vehicle</dt><dd>{{ ts.vehicle_plate or '–' }}</dd></div>
+    <div><dt>To</dt><dd>{{ ts.shop_code }} &mdash; {{ ts.shop_name }}</dd></div>
+    <div><dt>Items</dt><dd>{{ ts.lines|length }} line(s), {{ ts.lines|sum(attribute='qty_released') }} pcs</dd></div>
+  </dl>
+
+  {% if driver_sig %}
+    <h2>Already signed</h2>
+    {% if driver_sig.signature_data %}<img class="signature-preview" src="{{ driver_sig.signature_data }}" alt="Driver signature">{% endif %}
+    <p>{{ driver_sig.signer_name }} &middot; {{ (driver_sig.signed_at|string)[:16] }}
+      &middot; captured by {{ driver_sig.captured_by_name }}</p>
+    <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>
+  {% else %}
+    <h2>{{ ts.driver_name }}, please sign here</h2>
+    <canvas id="sig-pad" class="sig-pad" width="1280" height="480" aria-label="Driver signature area"></canvas>
+    <div class="sig-tools"><button type="button" id="sig-clear" class="btn small">Clear</button></div>
+    <form method="post" id="sig-form">
+      <input type="hidden" name="signature_data" id="signature_data">
+      <div class="actions">
+        <button type="submit" class="btn primary">Save driver signature</button>
+        <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Cancel</a>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/sigpad.js') }}"></script>{% endblock %}

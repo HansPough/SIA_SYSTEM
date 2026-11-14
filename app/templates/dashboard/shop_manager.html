@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% if no_signature %}
+<div class="flash info">You have not saved your signature yet. <a href="{{ url_for('auth.signature') }}">Draw or upload it once</a> and it is stamped on every form you sign.</div>
+{% endif %}
+<div class="page-head"><h1>Dashboard</h1><span class="badge">Shop Manager</span></div>
+<div class="cards">
+  <a class="tile" href="{{ url_for('requisition.alert_list', status='active') }}"><h3>Low-stock alerts</h3><p>Active alerts: {{ dash.active_alerts if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('requisition.rf_list') }}"><h3>Requisition forms</h3><p>Open RFs: {{ dash.open_rfs if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('delivery.delivery_list') }}"><h3>Incoming deliveries</h3><p>Waiting for your AR: {{ dash.incoming_deliveries if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('inventory.stock_list', status='below') }}"><h3>Shop stock</h3><p>Items at or below ROP: {{ stats.below_rop if stats else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('inventory.issue_list') }}"><h3>Void requests</h3><p>Waiting for your confirmation: {{ stats.pending_voids if stats else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('inventory.adjustment_list', status='pending') }}"><h3>Stock adjustments</h3><p>Shop adjustments to approve: {{ stats.pending_adjustments if stats else 0 }}</p></a>
+</div>
+{% endblock %}

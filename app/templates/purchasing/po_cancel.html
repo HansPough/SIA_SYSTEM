@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Cancel PO {{ po.po_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Cancel Purchase Order {{ po.po_no }}</h1>
+  <span class="badge warn">{{ po.status|replace('_', ' ')|capitalize }}</span>
+</div>
+<p class="note">A draft or sent PO can be cancelled. The REF goes back to the warehouse manager when no other PO is
+active for it. A PO that is already partially received cannot be cancelled.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}
+  {{ m.field('Supplier', 'supplier', 'text', value=po.supplier_name, readonly=True) }}
+  {{ m.field('REF no.', 'ref_no', 'text', value=po.ref_no, readonly=True) }}
+  {{ m.field('Total', 'total', 'text', value=po.total_amount|money, readonly=True) }}
+  {{ m.field('Reason for cancelling', 'cancel_reason', 'textarea', value=f.get('cancel_reason', ''),
+             required=True, col=2, help='for example: supplier cannot supply, or ordered twice') }}
+</div>
+<div class="actions">
+  <button type="submit" name="action" value="cancel_po" class="btn danger">Cancel PO</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.po_detail', po_id=po.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

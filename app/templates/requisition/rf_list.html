@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Requisition Forms (RF){% endblock %}
+{% block content %}
+<div class="page-head"><h1>Requisition Forms (RF)</h1>
+  {% if current_role == 'shop_manager' %}<a class="btn primary" href="{{ url_for('requisition.rf_new') }}">+ New RF</a>{% endif %}
+</div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search RF no. or shop...">
+  <select name="status"><option value="">Status: all</option>
+    {% for k, v in [('draft', 'Draft'), ('open', 'Open'), ('partially_delivered', 'Partially delivered'),
+                    ('closed', 'Closed'), ('cancelled', 'Cancelled')] %}
+    <option value="{{ k }}" {{ 'selected' if f.get('status') == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>RF no.</th><th>Date</th><th>Shop</th><th>Warehouse</th><th class="num">Items</th><th class="num">Requested</th><th class="num">Delivered</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ (r.rf_date|string)[:10] }}</td><td>{{ r.shop }}</td><td>{{ r.warehouse }}</td>
+<td class="num">{{ r.n_items }}</td><td class="num">{{ r.qty_requested }}</td><td class="num">{{ r.qty_delivered }}</td>
+<td><span class="badge {{ 'warn' if r.status in ['draft', 'open', 'partially_delivered'] }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td><a class="btn small" href="{{ url_for('requisition.rf_detail', rf_id=r.id) }}">Open</a></td></tr>
+{% else %}
+<tr><td colspan="9" class="muted">No requisition forms yet.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'requisition.rf_list', f) }}
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Sales / Stock Issues{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Sales / Stock Issues</h1>{% if current_role in ['shop_staff', 'shop_manager'] %}<a class="btn primary" href="{{ url_for('inventory.issue_new') }}">+ New</a>{% endif %}</div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search issue no., customer, receipt...">
+  <select name="period"><option value="">Date: all</option>{% for k, v in [('today','Today'),('week','This week'),('month','This month')] %}<option value="{{ k }}" {{ 'selected' if f.get('period') == k }}>{{ v }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Issue no.</th><th>Date</th><th>Shop</th><th>Customer</th><th>Receipt / invoice no.</th><th class="num">Items</th><th>Recorded by</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}<tr><td class="nowrap">{{ r.issue_no }}</td><td>{{ r.issue_date }}</td><td>{{ r.location }}</td><td>{{ r.customer_name or '' }}</td><td>{{ r.document_ref or '' }}</td><td class="num">{{ r.n_items }}</td><td>{{ r.recorded_by }}</td><td><span class="badge {{ 'warn' if r.status != 'posted' }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td><td><a class="btn small" href="{{ url_for('inventory.issue_detail', issue_id=r.id) }}">Open</a></td></tr>
+{% else %}<tr><td colspan="9" class="muted">No sales or issues recorded yet.</td></tr>{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'inventory.issue_list', f) }}
+</div>
+{% endblock %}

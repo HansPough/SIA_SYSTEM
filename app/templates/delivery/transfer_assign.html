@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Assign Driver and Vehicle {{ ts.ts_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Assign Driver and Vehicle</h1><span class="badge warn">Draft</span></div>
+<p class="note">The driver and vehicle appear on the TS. Only active drivers and vehicles are listed.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}
+  {{ m.field('RF no.', 'rf_no', 'text', value=ts.rf_no, readonly=True) }}
+  {{ m.field('From', 'from_location', 'text', value=ts.from_code, readonly=True) }}
+  {{ m.field('To', 'to_location', 'text', value=ts.shop_code, readonly=True) }}
+  <div class="field span-1"><label for="driver_id">Driver<span class="req">*</span></label>
+    <select id="driver_id" name="driver_id" required>
+      <option value="">-- select --</option>
+      {% for d in drivers if d.is_active %}<option value="{{ d.id }}" {{ 'selected' if f.get('driver_id') == d.id|string }}>{{ d.full_name }}</option>{% endfor %}
+    </select>
+    {% if not drivers|selectattr('is_active')|list %}<small>No active driver. Add one under Delivery → Drivers.</small>{% endif %}
+  </div>
+  <div class="field span-1"><label for="vehicle_id">Vehicle<span class="req">*</span></label>
+    <select id="vehicle_id" name="vehicle_id" required>
+      <option value="">-- select --</option>
+      {% for v in vehicles if v.is_active %}<option value="{{ v.id }}" {{ 'selected' if f.get('vehicle_id') == v.id|string }}>{{ v.plate_no }}{% if v.vehicle_type %} — {{ v.vehicle_type }}{% endif %}</option>{% endfor %}
+    </select>
+    {% if not vehicles|selectattr('is_active')|list %}<small>No active vehicle. Add one under Delivery → Vehicles.</small>{% endif %}
+  </div>
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
+</div>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Qty to release</th></tr></thead>
+<tbody>
+{% for l in ts.lines %}
+<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_released }}</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+<div class="actions">
+  <button type="submit" name="action" value="save_assignment" class="btn primary">Save assignment</button>
+  <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

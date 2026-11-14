@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}{{ d.title }} {{ d.doc_no }}{% endblock %}
+{% block content %}
+<div class="page-head no-print">
+  <h1>{{ d.title }}</h1>
+  <span class="badge">{{ d.doc_no }}</span>
+  <span class="badge {{ 'warn' if d.status not in ['Delivered', 'Closed', 'Resolved', 'Received'] }}">{{ d.status }}</span>
+</div>
+
+<p class="page-sub no-print">Signatures are added by the buttons that send or approve the form.</p>
+
+{% include 'print/_document_body.html' %}
+<div class="actions no-print"><a class="btn ghost" href="{{ d.back_url }}">Back</a></div>
+{% endblock %}

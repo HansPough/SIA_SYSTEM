@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Loading Check {{ ts.ts_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Loading Check</h1><span class="badge warn">Assigned</span></div>
+<p class="note no-print">Tick each line after counting the items against the TS. Every line must be checked before the
+warehouse manager can release the stock.</p>
+{% include 'print/_document_body.html' %}
+<form method="post" class="card no-print">
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Qty on TS</th><th>Loaded and checked</th></tr></thead>
+<tbody>
+{% for l in ts.lines %}
+<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_released }}</td>
+<td><label class="check"><input type="checkbox" name="loaded[]" value="{{ l.ts_item_id }}"> counted</label></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+<div class="actions">
+  <button type="submit" name="action" value="confirm_items_loaded" class="btn primary">Confirm items loaded</button>
+  <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

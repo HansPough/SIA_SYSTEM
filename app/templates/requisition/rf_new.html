@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}New Requisition Form{% endblock %}
+{% block content %}
+{% macro item_row(template=False) %}
+<tr class="line-row" {% if template %}data-row-template hidden{% endif %}>
+  <td><select name="item_id[]" data-fill-stock><option value="">-- select --</option>
+    {% for i in data.stock_items %}<option value="{{ i.id }}" data-onhand="{{ i.on_hand - i.reserved }}" data-rop="{{ i.rop }}"
+      data-suggested="{{ [i.max_level - (i.on_hand - i.reserved), 0]|max }}">{{ i.item_name }} (on hand {{ i.on_hand }})</option>{% endfor %}
+  </select></td>
+  <td><input type="number" name="on_hand[]" readonly></td>
+  <td><input type="number" name="rop[]" readonly></td>
+  <td><input type="number" name="suggested[]" readonly></td>
+  <td><input type="number" min="1" name="qty_requested[]"></td>
+  <td><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+</tr>
+{% endmacro %}
+
+<div class="page-head"><h1>New Requisition Form</h1><span class="badge">Draft</span></div>
+{% if alert %}
+<p class="note">Pre-filled from alert {{ alert.alert_no }}. You can change the quantities or add other items.</p>
+{% else %}
+<p class="note">Ask the warehouse for stock. The warehouse manager reserves it from the RF queue. No prices are
+recorded in this system.</p>
+{% endif %}
+<form method="post" class="card">
+<input type="hidden" name="alert_id" value="{{ alert.id if alert else '' }}">
+<div class="grid">
+  {{ m.field('RF no.', 'rf_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('Shop', 'shop', 'text', value=data.shop.code ~ ' — ' ~ data.shop.name, readonly=True) }}
+  <div class="field span-1"><label for="warehouse_id">Request from warehouse<span class="req">*</span></label>
+    <select id="warehouse_id" name="warehouse_id" required>
+      <option value="">-- select --</option>
+      {% for w in data.warehouses %}<option value="{{ w.id }}"
+        {{ 'selected' if data.warehouses|length == 1 }}>{{ w.code }} — {{ w.name }}</option>{% endfor %}
+    </select>
+    {% if not data.warehouses %}<small>No active warehouse is set up. Ask the owner.</small>{% endif %}
+  </div>
+  {{ m.field('Requested by', 'requested_by', 'text', value=requested_by, readonly=True) }}
+  {{ m.field('From alert', 'alert_no', 'text', value=(alert.alert_no if alert else ''), readonly=True) }}
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
+</div>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data lines" id="lines">
+<thead><tr><th>Item</th><th class="num">Shop available</th><th class="num">ROP</th><th class="num">Suggested qty</th><th>Qty requested</th><th></th></tr></thead>
+<tbody>
+{% if alert %}
+  {% for it in alert.item_rows %}
+  <tr class="line-row">
+    <td>{{ it.item_name }}<small class="muted">{{ it.item_code }}</small><input type="hidden" name="item_id[]" value="{{ it.item_id }}"></td>
+    <td class="num">{{ it.current_qty }}</td>
+    <td class="num">{{ it.rop }}</td>
+    <td class="num">{{ it.suggested_qty }}</td>
+    <td><input type="number" min="1" name="qty_requested[]" value="{{ it.suggested_qty }}"></td>
+    <td><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+  </tr>
+  {% endfor %}
+  {{ item_row(true) }}
+{% else %}
+  {{ item_row() }}
+{% endif %}
+</tbody>
+</table></div>
+<button type="button" class="btn small" data-add-row="lines">+ Add item</button>
+
+{{ m.signing_box('Sign & send signs the requisition and sends it to the warehouse. Save draft does not sign or send.') }}
+<div class="actions">
+  <button type="submit" name="action" value="save_draft" class="btn secondary">Save draft</button>
+  <button type="submit" name="action" value="submit_rf" class="btn primary">Sign &amp; send RF</button>
+  <a class="btn ghost" href="{{ url_for('requisition.rf_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

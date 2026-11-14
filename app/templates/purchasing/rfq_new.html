@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}New RFQ {{ data.ref.ref_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ 'Ask More Suppliers' if data.round > 1 else 'New RFQ' }}</h1><span class="badge warn">Will be sent</span></div>
+{% if data.round > 1 %}
+<p class="note">Some items on REF {{ data.ref.ref_no }} still have no supplier ({{ data.existing.rfq_no }} was already sent).
+This new RFQ is only for those items below. You can ask suppliers that were already asked, or new ones.
+This system does not send email: the RFQ is recorded as sent, and you email it to the suppliers yourself.</p>
+{% else %}
+<p class="note">The RFQ is pre-filled from REF {{ data.ref.ref_no }}. This system does not send email: the RFQ
+is recorded as sent, and you email it to the suppliers yourself.</p>
+{% endif %}
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('RFQ no.', 'rfq_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('REF no.', 'ref_no', 'text', value=data.ref.ref_no, readonly=True) }}
+  {{ m.field('Warehouse', 'warehouse', 'text', value=data.warehouse, readonly=True) }}
+  {{ m.field('Reply deadline', 'reply_deadline', 'date', value=f.get('reply_deadline', '')) }}
+  <div class="field span-2"><label for="supplier_ids">Send to suppliers<span class="req">*</span></label>
+    <select id="supplier_ids" name="supplier_ids[]" multiple size="6" required>
+      {% for s in data.suppliers %}<option value="{{ s.id }}">{{ s.supplier_name }}{% if s.is_regular %} (regular){% endif %}{% if s.asked %} &mdash; already asked in {{ s.asked }}{% endif %}</option>{% endfor %}
+    </select>
+    <small>Use Ctrl (or Cmd) to choose more than one.</small>
+  </div>
+  {{ m.field('Terms', 'terms', 'textarea', value=f.get('terms', ''), col=2) }}
+</div>
+
+<h2>{{ 'Items still without a supplier' if data.round > 1 else 'Items' }}</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">{{ 'Qty still needed' if data.round > 1 else 'Qty requested' }}</th></tr></thead>
+<tbody>
+{% for l in data.ref_items %}
+<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_requested }}</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+<div class="actions">
+  <button type="submit" name="action" value="send_rfq_by_email" class="btn primary">Record RFQ as sent</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+</div>
+</form>
+{% endblock %}

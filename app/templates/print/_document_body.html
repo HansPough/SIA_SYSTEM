@@ -1,0 +1,95 @@
+{% import '_macros.html' as m %}
+<div class="print-header">
+  <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="{{ company }}">
+  <div>
+    <div class="print-brand">{{ company|upper }}</div>
+    <div class="print-sub">Tire Supply &amp; Inventory</div>
+  </div>
+  <div class="print-meta">
+    <div><strong>{{ d.title }}</strong></div>
+    <div>{{ d.doc_no }}</div>
+    <div>{{ d.date }}</div>
+  </div>
+</div>
+
+<div class="card doc">
+  <div class="doc-tools no-print">
+    <a class="btn small" href="{{ url_for('documents.pdf', doc_type=d.doc_type, doc_id=d.doc_id) }}" download>Download PDF</a>
+    <button type="button" class="btn small" data-print-doc>Print</button>
+  </div>
+  <div class="doc-head">
+    <div>
+      <div class="doc-kicker">{{ company }}</div>
+      <h2 class="doc-title">{{ d.title }}</h2>
+      <div class="doc-no">{{ d.doc_no }}</div>
+    </div>
+    <div class="doc-status">
+      <div class="doc-date">Date: <strong>{{ d.date }}</strong></div>
+      <div class="badge {{ 'warn' if d.status not in ['Delivered', 'Closed', 'Resolved', 'Received'] }}">{{ d.status }}</div>
+    </div>
+  </div>
+
+  <div class="doc-parties">
+    <div><span>{{ d.party_from[0] }}</span><strong>{{ d.party_from[1] }}</strong></div>
+    <div><span>{{ d.party_to[0] }}</span><strong>{{ d.party_to[1] }}</strong></div>
+  </div>
+
+  {% if d.meta %}
+  <dl class="info doc-meta">
+    {% for label, value in d.meta %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+  </dl>
+  {% endif %}
+
+  <h2>Items</h2>
+  <div class="table-wrap"><table class="data doc-items">
+    <thead><tr><th>Code</th><th>Item</th><th class="num">Qty</th>{% if d.show_prices %}<th class="num">Unit price</th><th class="num">Amount</th>{% endif %}<th>Note</th></tr></thead>
+    <tbody>
+    {% for it in d.lines %}
+    <tr><td class="nowrap">{{ it.code }}</td><td>{{ it.name }}</td><td class="num">{{ it.qty }}</td>
+      {% if d.show_prices %}<td class="num">{{ it.price|money }}</td><td class="num">{{ it.amount|money }}</td>{% endif %}
+      <td>{{ it.note or '' }}</td></tr>
+    {% else %}
+    <tr><td colspan="{{ 6 if d.show_prices else 4 }}" class="muted">No items.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if d.total is not none %}
+    <tfoot><tr><td colspan="{{ 4 if d.show_prices else 2 }}" class="num"><strong>Total</strong></td>
+      <td class="num"><strong>{{ d.total|money }}</strong></td>{% if d.show_prices %}<td></td>{% endif %}</tr></tfoot>
+    {% endif %}
+  </table></div>
+
+  {% if d.notes %}
+  <h2>Notes</h2>
+  <div class="doc-notes">{% for n in d.notes %}<p>{{ n }}</p>{% endfor %}</div>
+  {% endif %}
+
+  {% if d.prepared %}
+  <p class="doc-prepared">{% for label, name in d.prepared %}{{ label }}: <strong>{{ name }}</strong>{% if not loop.last %} &nbsp;|&nbsp; {% endif %}{% endfor %}</p>
+  {% endif %}
+  <h2>Signatures</h2>
+  <div class="sign-grid">
+    {% for s in d.slots %}
+    <div class="sign-box">
+      <div class="sign-label">{{ s.label }}</div>
+      {% if s.signed %}
+        {% if s.signed.signature_data %}<img class="signature-img" src="{{ s.signed.signature_data }}" alt="Signature">{% else %}<div class="sign-space"></div>{% endif %}
+        <div class="sign-name">{{ s.signed.signer_name }}</div>
+        <div class="sign-date">{{ s.role_title }} &middot; {{ (s.signed.signed_at|string)[:16] }}</div>
+        {% if s.signed.captured_by_name %}<div class="sign-date">Captured by {{ s.signed.captured_by_name }}</div>{% endif %}
+        {% if s.changed %}<div class="sign-warn">Changed after signing. Do not rely on this signature.</div>{% endif %}
+      {% else %}
+        <div class="sign-space"></div>
+        <div class="sign-date">{{ 'Signature over printed name' if s.mode in ['wet', 'captured'] else 'Not signed yet' }}</div>
+      {% endif %}
+      {% if s.can_sign %}
+      <form method="post" action="{{ url_for('documents.sign', doc_type=d.doc_type, doc_id=d.doc_id) }}" class="sign-form no-print">
+        <input type="hidden" name="slot" value="{{ s.key }}">
+        {{ m.signing_box('Signs this line with your account name and the current time. It cannot be changed afterwards.') }}
+        <button type="submit" class="btn small primary">Sign</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="doc-foot">Signed electronically in the {{ company }} system. Each signature records the account, role, time and a fingerprint of this document (ref {{ d.doc_hash[:12]|upper }}).</p>
+</div>

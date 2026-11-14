@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Choose Suppliers {{ data.ref.ref_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Choose Suppliers</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
+<p class="note">For each item, pick the supplier to order it from. Different items can go to different suppliers: the owner
+approves them together and each supplier gets its own purchase order. If nobody can supply an item yet, choose
+<strong>keep it open</strong>, then <strong>ask more suppliers (new RFQ)</strong> or record another quotation. A supplier
+having "no stock" is not a reason to give up. Giving up an item you will not order at all is done from the REF page, and
+it can be restored.</p>
+
+{% if data.pending %}
+<div class="flash">This REF is already waiting for the owner's decision.</div>
+<a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+{% elif not data.lines %}
+<div class="flash success">Every item on this REF is already ordered or dropped.</div>
+<a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+{% else %}
+<form method="post" class="card">
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Still to order</th><th>Order from</th></tr></thead>
+<tbody>
+{% for l in data.lines %}
+<tr>
+  <td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small>
+    {% if l.on_po or l.qty_dropped %}<small class="muted">requested {{ l.qty_requested }}{% if l.on_po %}, ordered {{ l.on_po }}{% endif %}{% if l.qty_dropped %}, dropped {{ l.qty_dropped }}{% endif %}</small>{% endif %}</td>
+  <td class="num"><strong>{{ l.open }}</strong></td>
+  <td>
+    {% for o in l.options %}
+    <label class="choice {{ 'muted' if o.expired }}">
+      <input type="radio" name="choice_{{ l.ref_item_id }}" value="{{ o.key }}" {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
+      <strong>{{ o.supplier_name }}</strong>
+      &mdash; {{ o.unit_price|money }} each, can supply {{ o.max_qty }}{% if o.max_qty < l.open %} (short by {{ l.open - o.max_qty }}){% endif %}{% if o.lead %}, {{ o.lead }} day(s){% endif %}
+      {% if o.expired %}<span class="badge warn">quotation expired</span>{% endif %}
+    </label>
+    {% else %}
+    <small class="muted">No supplier has quoted this item yet.
+      <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers (new RFQ)</a></small>
+    {% endfor %}
+    <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" {{ 'checked' if l.default == 'open' }}>
+      Not now: keep it open (ask more suppliers, order it later)</label>
+    <div class="choice-extra">
+      <input type="number" min="1" name="qty_{{ l.ref_item_id }}" placeholder="qty (blank = all they can supply)" aria-label="Quantity">
+    </div>
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table></div>
+<div class="actions">
+  <button type="submit" class="btn primary">Send to the owner for approval</button>
+  <a class="btn secondary" href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">Record another quotation</a>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+</div>
+</form>
+{% endif %}
+
+{% if data.done %}
+<h2>Already covered</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Requested</th><th>Ordered on</th><th class="num">Dropped</th></tr></thead>
+<tbody>
+{% for l in data.done %}
+<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_requested }}</td>
+<td>{{ l.po_nos|join(', ') if l.po_nos else '–' }}</td>
+<td class="num">{% if l.qty_dropped %}{{ l.qty_dropped }} <small class="muted">{{ l.dropped_reason }}</small>{% else %}–{% endif %}</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Item Stock Card{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Item Stock Card</h1></div>
+<div class="card">
+<h2>Details</h2>
+<dl class="info">
+  <div><dt>Item</dt><dd>{{ card.item.item_name }}</dd></div>
+  <div><dt>Code</dt><dd>{{ card.item.item_code }}</dd></div>
+  <div><dt>Brand</dt><dd>{{ card.item.brand }}</dd></div>
+  <div><dt>Size / ply</dt><dd>{{ card.item.size or '–' }} {{ card.item.ply_rating or '' }}</dd></div>
+  <div><dt>Model</dt><dd>{{ card.item.model or '–' }}</dd></div>
+  <div><dt>Pattern</dt><dd>{{ card.item.pattern or '–' }}</dd></div>
+  <div><dt>Category</dt><dd>{{ card.item.category|capitalize }}</dd></div>
+</dl>
+<h2>Stock by location</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Location</th><th>Rack</th><th class="num">On hand</th><th class="num">Reserved</th><th class="num">Available</th><th class="num">ROP</th><th class="num">Max level</th></tr></thead>
+<tbody>{% for b in card.balances %}<tr><td>{{ b.location }}</td><td>{{ b.rack or '–' }}</td><td class="num">{{ b.on_hand }}</td><td class="num">{{ b.reserved }}</td><td class="num">{{ b.on_hand - b.reserved }}</td><td class="num">{{ b.rop if b.rop is not none else '–' }}</td><td class="num">{{ b.max_level if b.max_level is not none else '–' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<h2>Stock ledger (latest 100)</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Date</th><th>Location</th><th>Movement</th><th class="num">Qty</th><th class="num">Balance</th><th>Reference</th><th>Remarks</th></tr></thead>
+<tbody>
+{% for l in card.ledger %}<tr><td>{{ (l.created_at|string)[:10] }}</td><td>{{ l.location }}</td><td>{{ l.movement_type|replace('_', ' ') }}</td><td class="num">{{ '%+d' % l.qty_change }}</td><td class="num">{{ l.balance_after }}</td><td>{{ l.ref_no or '' }}</td><td>{{ l.remarks or '' }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No movements yet.</td></tr>{% endfor %}
+</tbody>
+</table></div>
+<div class="actions">
+  {% if current_role in ['owner'] %}<a class="btn secondary" href="{{ url_for('inventory.rop_edit', item_id=item_id) }}">Edit ROP settings</a>{% endif %}
+  <a class="btn ghost" href="javascript:history.back()">Back</a>
+</div>
+</div>
+{% endblock %}

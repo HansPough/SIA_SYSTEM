@@ -1,0 +1,8 @@
+{#- The two Discrepancies screens, side by side: goods from suppliers (DR) and items the shops rejected. -#}
+{% set dc = discrepancy_counts() %}
+<div class="tabs no-print" role="tablist">
+  <a class="tab {{ 'active' if tab == 'suppliers' }}" role="tab" href="{{ url_for('delivery.discrepancy_list') }}">
+    From suppliers{% if dc.suppliers %}<span class="tab-count">{{ dc.suppliers }}</span>{% endif %}</a>
+  <a class="tab {{ 'active' if tab == 'shops' }}" role="tab" href="{{ url_for('delivery.variance_list') }}">
+    To shops{% if dc.shops %}<span class="tab-count">{{ dc.shops }}</span>{% endif %}</a>
+</div>

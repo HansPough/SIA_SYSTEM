@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}New Location{% endblock %}
+{% block content %}
+<div class="page-head"><h1>New Location</h1></div>
+<p class="note">A location is a shop or a warehouse. Add a warehouse before assigning warehouse staff, and a shop before assigning shop staff.</p>
+<form method="post" class="card">
+<div class="grid">
+  {{ m.field('Code', 'code', 'text', value=f.get('code', ''), required=True, help='Short code used on documents, e.g. WH, SHOP2.') }}
+  {{ m.field('Name', 'name', 'text', value=f.get('name', ''), required=True) }}
+  <div class="field span-1"><label for="loc_type">Type<span class="req">*</span></label>
+    <select id="loc_type" name="loc_type" required>
+      <option value="shop" {{ 'selected' if f.get('loc_type') == 'shop' }}>Shop</option>
+      <option value="warehouse" {{ 'selected' if f.get('loc_type') == 'warehouse' }}>Warehouse</option>
+    </select>
+  </div>
+  {{ m.field('Address', 'address', 'text', value=f.get('address', ''), col=2) }}
+  {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or not f), help=' can be used for new stock and users') }}
+</div>
+<div class="actions">
+  <button type="submit" class="btn primary">Save location</button>
+  <a class="btn ghost" href="{{ url_for('admin.location_list') }}">Back</a>
+</div>
+</form>
+{% endblock %}

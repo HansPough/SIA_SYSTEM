@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Low-stock Alert {{ alert.alert_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Low-stock Alert {{ alert.alert_no }}</h1>
+  {{ m.alert_badge(alert) }}
+</div>
+<div class="card">
+<dl class="info">
+  <div><dt>Shop</dt><dd>{{ alert.shop }} &mdash; {{ alert.shop_name }}</dd></div>
+  <div><dt>Created</dt><dd>{{ (alert.created_at|string)[:16] }}</dd></div>
+  <div><dt>Closed</dt><dd>{{ (alert.closed_at|string)[:16] if alert.closed_at else '–' }}</dd></div>
+  {% if alert.dismissed_reason %}<div><dt>Dismissed because</dt><dd>{{ alert.dismissed_reason }}</dd></div>{% endif %}
+</dl>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Shop available</th><th class="num">ROP</th><th class="num">Suggested qty</th><th>Reason</th></tr></thead>
+<tbody>
+{% for it in alert.item_rows %}
+<tr><td>{{ it.item_name }}<small class="muted">{{ it.item_code }}</small></td>
+<td class="num">{{ it.current_qty }}</td><td class="num">{{ it.rop }}</td>
+<td class="num">{{ it.suggested_qty }}</td>
+<td>{{ it.reason|replace('_', ' ')|capitalize }}</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">No items on this alert.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+{% if alert.rfs %}
+<h2>Requisition forms from this alert</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>RF no.</th><th>Created</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in alert.rfs %}
+<tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ (r.created_at|string)[:10] }}</td>
+<td>{{ r.status|replace('_', ' ')|capitalize }}</td>
+<td><a class="btn small" href="{{ url_for('requisition.rf_detail', rf_id=r.id) }}">Open</a></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{% endif %}
+
+<div class="actions">
+  {% if alert.status == 'active' %}
+  <a class="btn primary" href="{{ url_for('requisition.rf_new', alert_id=alert.id) }}">Create RF from this alert</a>
+  <span class="spacer"></span>
+  {% if alert.is_snoozed %}
+  <span class="snooze-note">Silent until {{ (alert.snoozed_until|string)[:10] }}. It stays open.</span>
+  <form method="post" action="{{ url_for('requisition.alert_wake', alert_id=alert.id) }}"><button class="btn" type="submit">Wake now</button></form>
+  {% else %}
+  <span class="muted">Not now?</span>
+  {{ m.snooze_form(url_for('requisition.alert_snooze', alert_id=alert.id)) }}
+  {% endif %}
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('requisition.alert_list') }}">Back to alerts</a>
+</div>
+</div>
+{% endblock %}

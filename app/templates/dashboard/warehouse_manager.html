@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% if no_signature %}
+<div class="flash info">You have not saved your signature yet. <a href="{{ url_for('auth.signature') }}">Draw or upload it once</a> and it is stamped on every form you sign.</div>
+{% endif %}
+<div class="page-head"><h1>Dashboard</h1><span class="badge">Warehouse Manager</span></div>
+<div class="cards">
+  <a class="tile" href="{{ url_for('documents.to_sign') }}"><h3>Documents to sign</h3><p>Waiting for your signature: {{ to_sign }}</p></a>
+  <a class="tile" href="{{ url_for('inventory.rfqueue_list') }}"><h3>RF queue</h3><p>Open requisitions: {{ dash.rf_queue if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('delivery.transfer_list') }}"><h3>Transfer slips</h3><p>To assign or release: {{ dash.transfers_to_move if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('purchasing.alert_list', status='active') }}"><h3>Restock alerts</h3><p>Active alerts: {{ dash.active_restock_alerts if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('purchasing.ref_list') }}"><h3>Replenishment forms</h3><p>Open REFs: {{ dash.open_refs if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('purchasing.po_list') }}"><h3>Purchase orders</h3><p>Waiting for delivery: {{ dash.pos_waiting_delivery if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('delivery.discrepancy_list') }}"><h3>Discrepancies</h3>{% set dc = discrepancy_counts() %}<p>Open: {{ dc.suppliers }} from suppliers, {{ dc.shops }} to shops</p></a>
+  <a class="tile" href="{{ url_for('inventory.adjustment_list', status='pending') }}"><h3>Stock adjustments</h3><p>Warehouse adjustments to approve: {{ stats.pending_adjustments if stats else 0 }}</p></a>
+</div>
+{% endblock %}

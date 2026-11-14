@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Requisition Form {{ rf.rf_no }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Requisition Form {{ rf.rf_no }}</h1>
+  <span class="badge {{ 'warn' if rf.status in ['draft', 'open', 'partially_delivered'] }}">{{ rf.status|replace('_', ' ')|capitalize }}</span>
+</div>
+{% include 'print/_document_body.html' %}
+<details class="card no-print"><summary>Progress and details</summary>
+<dl class="info">
+  <div><dt>RF no.</dt><dd>{{ rf.rf_no }}</dd></div>
+  <div><dt>Date</dt><dd>{{ ((rf.submitted_at or rf.created_at)|string)[:10] }}</dd></div>
+  <div><dt>Shop</dt><dd>{{ rf.shop }} &mdash; {{ rf.shop_name }}</dd></div>
+  <div><dt>Warehouse</dt><dd>{{ rf.warehouse }} &mdash; {{ rf.warehouse_name }}</dd></div>
+  <div><dt>Requested by</dt><dd>{{ rf.requested_by_name }}</dd></div>
+  {% if rf.alert_no %}
+  <div><dt>From alert</dt><dd>
+    {% if current_role == 'shop_manager' %}<a href="{{ url_for('requisition.alert_detail', alert_id=rf.notification_id) }}">{{ rf.alert_no }}</a>
+    {% else %}{{ rf.alert_no }}{% endif %}
+  </dd></div>
+  {% endif %}
+  {% if rf.remarks %}<div><dt>Remarks</dt><dd>{{ rf.remarks }}</dd></div>{% endif %}
+  {% if rf.cancel_reason %}<div><dt>Cancelled because</dt><dd>{{ rf.cancel_reason }}</dd></div>{% endif %}
+</dl>
+
+<h2>Items</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Requested</th><th class="num">Reserved</th><th class="num">Delivered</th><th class="num">Still to reserve</th><th class="num">Still to deliver</th></tr></thead>
+<tbody>
+{% for l in rf.lines %}
+<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_requested }}</td><td class="num">{{ l.qty_reserved }}</td><td class="num">{{ l.qty_delivered }}</td>
+<td class="num">{{ l.still_to_reserve }}</td><td class="num">{{ l.still_to_deliver }}</td></tr>
+{% else %}
+<tr><td colspan="6" class="muted">This requisition has no items.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+<h2>Transfer slips</h2>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>TS no.</th><th>Date</th><th>Status</th></tr></thead>
+<tbody>
+{% for t in rf.ts %}
+<tr><td>{% if current_role in ['owner', 'warehouse_manager'] or t.status in ['in_transit', 'delivered', 'delivered_with_variance'] %}<a href="{{ url_for('delivery.transfer_detail', ts_id=t.id) }}">{{ t.ts_no }}</a>{% else %}{{ t.ts_no }}{% endif %}</td><td>{{ (t.created_at|string)[:10] }}</td><td>{{ t.status|replace('_', ' ')|capitalize }}</td></tr>
+{% else %}
+<tr><td colspan="3" class="muted">No transfer slips yet. The Delivery module creates them.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+
+</details>
+<div class="actions">
+  {% if current_role == 'warehouse_manager' and rf.status in ['open', 'partially_delivered'] %}
+  <a class="btn primary" href="{{ url_for('inventory.rfqueue_review', rf_id=rf.id) }}">{{ 'Review and reserve stock' if queue_rf and queue_rf.lines|selectattr('remaining', 'gt', 0)|list and not (queue_rf.active_transfer and queue_rf.active_transfer.status in ['draft', 'assigned', 'loaded']) else 'View reservation and transfer' }}</a>
+  {% endif %}
+  {% if current_role == 'shop_manager' and rf.status == 'draft' %}
+  <form method="post">
+    <button type="submit" name="action" value="submit_rf" class="btn primary">Sign &amp; send RF to warehouse</button>
+  </form>
+  {% endif %}
+  {% if can_cancel %}
+  <a class="btn danger" href="{{ url_for('requisition.rf_cancel', rf_id=rf.id) }}">Cancel RF</a>
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('requisition.rf_list') }}">Back</a>
+</div>
+{% endblock %}

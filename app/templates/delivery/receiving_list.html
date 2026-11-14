@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}Receiving from Suppliers{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Receiving from Suppliers</h1></div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search PO no. or supplier...">
+  <select name="status"><option value="">Status: all</option>
+    {% for k, v in [('sent', 'Sent'), ('partially_received', 'Partially received')] %}
+    <option value="{{ k }}" {{ 'selected' if f.get('status') == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>PO no.</th><th>Supplier</th><th>Expected</th><th class="num">Items</th><th class="num">Received so far</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}
+<tr><td class="nowrap">{{ r.po_no }}</td><td>{{ r.supplier_name }}</td>
+<td>{{ (r.expected_date|string)[:10] if r.expected_date else '–' }}</td>
+<td class="num">{{ r.n_items }}</td><td class="num">{{ r.qty_received }} / {{ r.qty_ordered }}</td>
+<td><span class="badge {{ 'warn' if r.status == 'partially_received' }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td><a class="btn small primary" href="{{ url_for('delivery.receiving_check', po_id=r.id) }}">Receive</a></td></tr>
+{% else %}
+<tr><td colspan="7" class="muted">No purchase orders are waiting for goods. A PO must be marked as sent in Purchasing first.</td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'delivery.receiving_list', f) }}
+</div>
+{% endblock %}

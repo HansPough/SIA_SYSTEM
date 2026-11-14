@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}ROP Settings{% endblock %}
+{% block content %}
+<div class="page-head"><h1>ROP Settings</h1></div>
+<div class="card">
+<form method="get" class="filters">
+  <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search item or code...">
+  <select name="location"><option value="">Location: all</option>{% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if f.get('location') == l.id|string }}>{{ l.code }} ({{ l.loc_type }})</option>{% endfor %}</select>
+  <select name="show"><option value="">Show: all items</option><option value="missing" {{ 'selected' if f.get('show') == 'missing' }}>Items without ROP</option></select>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th>Location</th><th>Rack</th><th class="num">Stock</th><th class="num">ROP</th><th class="num" title="30-day average issue × lead time × 1.5">Suggested ROP</th><th class="num">Max level</th><th class="num">Lead time (days)</th><th>Updated</th><th></th></tr></thead>
+<tbody>
+{% for r in res.rows %}<tr><td>{{ r.item_name }}</td><td>{{ r.location }}</td><td>{{ r.rack or '–' }}</td><td class="num">{{ r.on_hand }}</td><td class="num">{{ r.rop }}</td><td class="num" title="average {{ r.avg_daily }} per day">{{ r.suggested_rop }}</td><td class="num">{{ r.max_level }}</td><td class="num">{{ r.lead_time_days }}</td><td>{{ (r.updated_at|string)[:10] if r.updated_at else '' }}</td><td><a class="btn small" href="{{ url_for('inventory.rop_edit', item_id=r.item_id) }}">Edit</a></td></tr>
+{% else %}<tr><td colspan="10" class="muted">No items found.</td></tr>{% endfor %}
+</tbody>
+</table></div>
+{{ m.pager(res, 'inventory.rop_list', f) }}
+</div>
+{% endblock %}
