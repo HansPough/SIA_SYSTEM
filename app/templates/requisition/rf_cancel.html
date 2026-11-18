@@ -5,8 +5,7 @@
 <div class="page-head"><h1>Cancel RF {{ rf.rf_no }}</h1>
   <span class="badge warn">{{ rf.status|replace('_', ' ')|capitalize }}</span>
 </div>
-<p class="note">The warehouse releases any stock it is holding for this RF. A called-off RF cannot be reopened;
-create a new one if the shop still needs the stock. A partially delivered RF cannot be cancelled.</p>
+<p class="note">The warehouse releases the reserved stock. A cancelled RF cannot be reopened.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RF no.', 'rf_no', 'text', value=rf.rf_no, readonly=True) }}
@@ -14,7 +13,7 @@ create a new one if the shop still needs the stock. A partially delivered RF can
   {{ m.field('Warehouse', 'warehouse', 'text', value=rf.warehouse, readonly=True) }}
   {{ m.field('Status', 'status', 'text', value=rf.status|replace('_', ' ')|capitalize, readonly=True) }}
   {{ m.field('Reason for cancelling', 'cancel_reason', 'textarea', value=f.get('cancel_reason', ''),
-             required=True, col=2, help='for example: ordered by mistake, or the shop no longer needs it') }}
+             required=True, col=2, help='for example: ordered by mistake') }}
 </div>
 <div class="actions">
   <button type="submit" name="action" value="cancel_rf" class="btn danger">Cancel RF</button>

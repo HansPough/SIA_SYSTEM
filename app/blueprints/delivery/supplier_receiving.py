@@ -54,7 +54,9 @@ def receiving_check(po_id):
                          request.form.getlist("qty_delivered[]"),
                          request.form.getlist("qty_accepted[]"),
                          request.form.getlist("qty_rejected[]"),
-                         request.form.getlist("reject_reason[]"))))
+                         request.form.getlist("reject_reason[]"))),
+                supplier_invoice_no=request.form.get("supplier_invoice_no"),
+                delivered_by=request.form.get("delivered_by"))
             # Staff do not sign. If a manager recorded the receipt, it is signed now;
             # if staff recorded it, the manager signs from the document page.
             if user["role"] == "warehouse_manager":

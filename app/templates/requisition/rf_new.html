@@ -20,8 +20,7 @@
 {% if alert %}
 <p class="note">Pre-filled from alert {{ alert.alert_no }}. You can change the quantities or add other items.</p>
 {% else %}
-<p class="note">Ask the warehouse for stock. The warehouse manager reserves it from the RF queue. No prices are
-recorded in this system.</p>
+<p class="note">Ask the warehouse for stock. No prices are recorded.</p>
 {% endif %}
 <form method="post" class="card">
 <input type="hidden" name="alert_id" value="{{ alert.id if alert else '' }}">

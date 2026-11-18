@@ -274,6 +274,21 @@ def _item_name(item_id):
     return (get_item(item_id) or {}).get("item_name", "Item %s" % item_id)
 
 
+def _check_einvoice(reason, document_ref, exclude_id=None):
+    """A sale needs an e-invoice number and an e-invoice number is used once (a voided sale frees it)."""
+    ref = (document_ref or "").strip()
+    if reason == "sale" and not ref:
+        raise InventoryError("Enter the e-invoice number.")
+    if len(ref) > 40:
+        raise InventoryError("The e-invoice number can be at most 40 characters.")
+    if ref:
+        used = _b().one("SELECT issue_no FROM stock_issues WHERE LOWER(document_ref) = LOWER(:r) "
+                        "AND status <> 'voided' LIMIT 1", r=ref)
+        if used:
+            raise InventoryError("E-invoice no. %s is already used on %s." % (ref, used["issue_no"]))
+    return ref or None
+
+
 def create_issue(user_id, location_id, issue_date, customer, document_ref, reason, remarks, pairs):
     """Save a sale / stock issue and deduct the stock. Returns (issue_id, issue_no, items_now_low)."""
     loc = get_location(location_id)
@@ -284,12 +299,13 @@ def create_issue(user_id, location_id, issue_date, customer, document_ref, reaso
     if reason not in ("sale", "other"):
         raise InventoryError("Select a reason.")
     lines = _merge_lines(pairs, "Quantity")
+    einvoice = _check_einvoice(reason, document_ref)          # before a document number is used
     issue_no = inv.next_doc_no("ISS", d.year)
     row = _b().one(
         "INSERT INTO stock_issues (issue_no, location_id, customer_name, issue_date, document_ref, reason, remarks, recorded_by) "
         "VALUES (:n, :l, :c, :d, :ref, :r, :rem, :u) RETURNING id",
         n=issue_no, l=location_id, c=(customer or "").strip()[:120] or None, d=d.isoformat(),
-        ref=(document_ref or "").strip()[:40] or None, r=reason, rem=(remarks or "").strip()[:200] or None, u=user_id)
+        ref=einvoice, r=reason, rem=(remarks or "").strip()[:200] or None, u=user_id)
     issue_id = row["id"]
     for item_id, qty in lines.items():
         _b().execute("INSERT INTO stock_issue_items (issue_id, item_id, qty) VALUES (:i, :it, :q)",
@@ -683,13 +699,57 @@ def list_rf_queue(warehouse_id, q="", status="", page=1):
             "(SELECT COUNT(*) FROM requisition_items x WHERE x.rf_id = r.id) AS n_items, "
             "(SELECT COUNT(*) FROM requisition_items x WHERE x.rf_id = r.id "
             " AND x.qty_requested - x.qty_reserved > 0) AS n_waiting, "
+            "(SELECT COUNT(*) FROM requisition_items x LEFT JOIN stock_balances b ON b.item_id = x.item_id "
+            " AND b.location_id = r.warehouse_id WHERE x.rf_id = r.id AND x.qty_requested - x.qty_reserved > 0 "
+            " AND COALESCE(b.on_hand, 0) - COALESCE(b.reserved, 0) > 0) AS n_reservable, "
             "(SELECT t.id FROM transfer_slips t WHERE t.rf_id = r.id "
             " AND t.status IN ('draft', 'assigned', 'loaded', 'in_transit') ORDER BY t.id LIMIT 1) AS active_transfer_id, "
             "(SELECT t.status FROM transfer_slips t WHERE t.rf_id = r.id "
             " AND t.status IN ('draft', 'assigned', 'loaded', 'in_transit') ORDER BY t.id LIMIT 1) AS active_transfer_status, "
             "(SELECT COUNT(*) FROM reservations rs JOIN requisition_items x ON x.id = rs.rf_item_id "
             " WHERE x.rf_id = r.id AND rs.status = 'reserved') AS n_reserved ")
-    return _paged("SELECT COUNT(*) AS n " + frm + where, cols + frm + where + " ORDER BY r.id", page, **p)
+    res = _paged("SELECT COUNT(*) AS n " + frm + where, cols + frm + where + " ORDER BY r.id", page, **p)
+    for row in res["rows"]:
+        _queue_stage(row)
+    return res
+
+
+def _queue_stage(r):
+    """One clear stage and one next action per RF, so the badge and the button always agree."""
+    if r["active_transfer_id"] and r["active_transfer_status"] in ("draft", "assigned", "loaded"):
+        r.update(stage="Transfer in progress", tone="warn", next_kind="transfer", next_label="Open transfer", next_primary=False)
+    elif r["active_transfer_id"] and not r["n_waiting"]:
+        r.update(stage="In transit", tone="", next_kind="transfer", next_label="Open transfer", next_primary=False)
+    elif r["n_reservable"]:
+        r.update(stage="Ready to reserve", tone="warn", next_kind="review", next_label="Review RF", next_primary=True)
+    elif r["n_waiting"]:
+        r.update(stage="Waiting for stock", tone="danger", next_kind="review", next_label="Review RF", next_primary=False)
+    elif r["n_reserved"]:
+        r.update(stage="Ready for transfer", tone="warn", next_kind="create", next_label="Create transfer", next_primary=True)
+    else:
+        r.update(stage=str(r["status"]).replace("_", " ").capitalize(), tone="", next_kind="review",
+                 next_label="Review RF", next_primary=False)
+
+
+def register_rf_shortages(rf_id):
+    """When an RF is sent, whatever the warehouse cannot cover right now goes onto the restock alert at once.
+    Nobody has to press a button for that. Returns how many items were short."""
+    rf = _b().one("SELECT warehouse_id FROM requisitions WHERE id = :r", r=rf_id)
+    if rf is None:
+        return 0
+    rows = _b().all(
+        "SELECT x.item_id, x.qty_requested - x.qty_reserved AS need, "
+        "COALESCE(b.on_hand, 0) - COALESCE(b.reserved, 0) AS avail "
+        "FROM requisition_items x LEFT JOIN stock_balances b ON b.item_id = x.item_id AND b.location_id = :w "
+        "WHERE x.rf_id = :r", r=rf_id, w=rf["warehouse_id"])
+    short = [r["item_id"] for r in rows if r["need"] > 0 and r["avail"] < r["need"]]
+    if short:
+        add_shortages(rf["warehouse_id"], short)
+    return len(short)
+
+
+class WaitingForStock(InventoryError):
+    """Nothing can be reserved because no stock is available. The shortage is recorded; nothing else changes."""
 
 
 def get_rf(rf_id, warehouse_id):
@@ -753,6 +813,12 @@ def reserve_rf(user, rf_id, pairs):
         reserved_now += qty
         touched.append(ln["item_id"])
     short = [ln["item_id"] for ln in rf["lines"] if ln["remaining"] > 0]
+    if not reserved_now:
+        if not any(ln["suggest"] > 0 for ln in rf["lines"]):
+            add_shortages(rf["warehouse_id"], short)          # keep the shortage on the restock alert
+            raise WaitingForStock("Nothing to reserve: no stock is available yet. "
+                                  "%s is waiting and the item is on the restock alert." % rf["rf_no"])
+        raise InventoryError("Enter how many units to reserve.")
     if touched:
         refresh_alerts(rf["warehouse_id"], touched)
     if short:

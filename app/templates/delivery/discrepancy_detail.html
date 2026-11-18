@@ -2,9 +2,6 @@
 {% import '_macros.html' as m %}
 {% block title %}Discrepancy Report {{ report.report_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Discrepancy Report {{ report.report_no }}</h1>
-  <span class="badge {{ 'warn' if report.status != 'resolved' }}">{{ report.status|replace('_', ' ')|capitalize }}</span>
-</div>
 {% set d = load_document('DR', report.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
 <details class="card no-print"><summary>Progress and details</summary>
@@ -35,16 +32,14 @@
 
 {% if report.status == 'resolved' %}
   {% if report.qty_outstanding > 0 %}
-<p class="note">Resolved with {{ report.qty_outstanding }} unit(s) still outstanding (for example, credited by the
-supplier). A later receipt will not reopen it.</p>
+<p class="note">Resolved with {{ report.qty_outstanding }} unit(s) outstanding (for example, credited).</p>
   {% else %}
 <p class="note">Resolved. Nothing is outstanding for this report.</p>
   {% endif %}
 {% elif report.qty_outstanding == 0 %}
-<p class="note">Nothing is outstanding for this report. The next receiving memo for this PO resolves it automatically.</p>
+<p class="note">Nothing outstanding. The next receiving memo for this PO resolves it.</p>
 {% else %}
-<p class="note">{{ report.qty_outstanding }} unit(s) still outstanding. A later receiving memo that accepts them closes this
-report automatically.</p>
+<p class="note">{{ report.qty_outstanding }} unit(s) still outstanding. A later receiving memo closes this.</p>
 {% endif %}
 
 <form method="post">

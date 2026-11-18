@@ -6,7 +6,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(__file__))
 from app import create_app
 from app import inventory_service as inv
-from sqlite_schema import SqliteBackend
+from sqlite_schema import SqliteBackend, next_invoice
 
 WH, SHOP = 1, 2
 A, B = 1, 2          # item ids
@@ -51,7 +51,7 @@ class Base(unittest.TestCase):
 
     def sell(self, qty, item=A, who="shopstaff"):
         self.login(who)
-        return self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        return self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                            "item_id[]": [str(item)], "qty[]": [str(qty)]})
 
     def alerts(self, ntype="low_stock"):
@@ -320,8 +320,76 @@ class RfQueueTests(Base):
         self.make_rf([(A, 2)])
         self.login("whmgr")
         response = self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["0"]})
-        self.assertEqual(response.headers["Location"], "/inventory/rf-queue/1")
+        self.assertEqual(response.status_code, 200)                       # not a success: it says what to do
+        self.assertIn("Enter how many units to reserve", response.get_data(as_text=True))
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM transfer_slips")["n"], 0)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM reservations")["n"], 0)
+
+    # ---- the queue says what each RF needs, and never offers a button that does nothing ----
+    def set_wh_stock(self, item, on_hand, reserved=0):
+        self.be.execute("UPDATE stock_balances SET on_hand = :q, reserved = :r WHERE item_id = :i AND location_id = :l",
+                        q=on_hand, r=reserved, i=item, l=WH)
+        self.be.commit()
+
+    def queue(self):
+        return self.c.get("/inventory/rf-queue").get_data(as_text=True)
+
+    def test_the_queue_shows_one_stage_and_the_matching_button(self):
+        self.make_rf([(A, 2)])
+        self.login("whmgr")
+        html = self.queue()                                               # 20 on hand: something can be reserved
+        self.assertIn("Ready to reserve", html)
+        self.assertRegex(html, r'class="btn small primary" href="/inventory/rf-queue/1">Review RF</a>')
+        self.set_wh_stock(A, 0)                                           # nothing available any more
+        html = self.queue()
+        self.assertIn("Waiting for stock", html)
+        self.assertRegex(html, r'class="btn small " href="/inventory/rf-queue/1">Review RF</a>')   # not highlighted
+        self.set_wh_stock(A, 20)
+        self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["2"]})
+        html = self.queue()                                               # reserved, no transfer yet
+        self.assertIn("Ready for transfer", html)
+        self.assertRegex(html, r'class="btn small primary" href="/delivery/transfers/new\?rf_id=1">Create transfer</a>')
+        self.c.post("/delivery/transfers/new", data={"rf_id": "1"})
+        html = self.queue()                                               # a transfer slip is being prepared
+        self.assertIn("Transfer in progress", html)
+        self.assertRegex(html, r'>Open transfer</a>')
+        self.assertNotIn("Review stock", html)
+        self.assertNotIn("View requisition", html)
+
+    def test_no_stock_means_no_reserve_button_and_no_fake_success(self):
+        self.make_rf([(A, 2)])
+        self.set_wh_stock(A, 0)
+        self.login("whmgr")
+        review = self.c.get("/inventory/rf-queue/1").get_data(as_text=True)
+        self.assertNotIn('value="reserve_stock"', review)                 # the dead button is gone
+        self.assertIn("Waiting for stock", review)
+        self.assertIn("Restock alerts", review)
+        r = self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["2"]})
+        self.assertEqual(r.status_code, 200)                              # asking for stock that is not there is refused
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM reservations")["n"], 0)
+        for _ in range(2):                                                # an old page pressing it (suggested 0) changes nothing
+            r = self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["0"]},
+                            follow_redirects=True)
+            html = r.get_data(as_text=True)
+            self.assertIn("Nothing to reserve: no stock is available yet", html)
+            self.assertNotIn("Reserved 0", html)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM reservations")["n"], 0)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM document_signatures")["n"], 0)    # nothing was signed
+        shortage = [x for x in self.alerts("restock") if x["item_id"] == A]
+        self.assertEqual(len(shortage), 1)                                # on the restock alert, once
+
+    def test_a_sent_rf_flags_its_shortage_without_anyone_pressing_reserve(self):
+        self.login("shopmgr")                                             # the warehouse has only 4 of B
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(B)], "qty_requested[]": ["9"]})
+        short = [x for x in self.alerts("restock") if x["item_id"] == B and x["reason"] == "shortage"]
+        self.assertEqual(len(short), 1)
+
+    def test_an_rf_the_warehouse_can_cover_adds_no_shortage(self):
+        self.login("shopmgr")
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(A)], "qty_requested[]": ["3"]})
+        self.assertEqual([x for x in self.alerts("restock") if x["reason"] == "shortage"], [])
 
     def test_only_the_warehouse_manager_of_that_warehouse(self):
         self.make_rf([(A, 2)])

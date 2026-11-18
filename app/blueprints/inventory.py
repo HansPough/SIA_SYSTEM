@@ -256,6 +256,10 @@ def rfqueue_review(rf_id):
             # acting on the RF is the warehouse manager's acknowledgement: sign "Noted by" once
             docs.sign_on_action(user, "RF", rf_id, "noted_by", skip_if_signed=True)
             inv.commit()
+        except ops.WaitingForStock as e:
+            inv.commit()                       # the shortage was recorded; nothing else changed
+            flash(str(e), "info")
+            return redirect(url_for("inventory.rfqueue_list"))
         except InventoryError as e:
             inv.rollback()
             flash(str(e), "error")
@@ -276,11 +280,14 @@ def rfqueue_review(rf_id):
     if document is None:
         return render_template("404.html"), 404
     active = rf["active_transfer"]
-    can_reserve = (rf["status"] in ("open", "partially_delivered")
-                   and any(line["remaining"] > 0 for line in rf["lines"])
-                   and not (active and active["status"] in ("draft", "assigned", "loaded")))
+    open_status = rf["status"] in ("open", "partially_delivered")
+    blocked = bool(active and active["status"] in ("draft", "assigned", "loaded"))
+    wants_more = any(line["remaining"] > 0 for line in rf["lines"])
+    can_reserve = (open_status and wants_more and not blocked
+                   and any(line["suggest"] > 0 for line in rf["lines"]))      # something is actually available
+    waiting_for_stock = open_status and wants_more and not blocked and not can_reserve
     return render_template("inventory/rfqueue_review.html", rf=rf, f=request.form,
-                           d=document, can_reserve=can_reserve,
+                           d=document, can_reserve=can_reserve, waiting_for_stock=waiting_for_stock,
                            has_reserved=rf["has_reserved"], active_transfer=active)
 
 

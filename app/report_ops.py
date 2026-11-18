@@ -86,11 +86,11 @@ def run(name, args):
         if q.strip():
             where += " AND (LOWER(i.item_name) LIKE :q OR LOWER(si.issue_no) LIKE :q OR LOWER(COALESCE(si.customer_name, '')) LIKE :q)"; p["q"] = _like(q)
         rows = _b().all(
-            "SELECT si.issue_no, si.issue_date, l.code AS location, si.customer_name, si.document_ref, si.reason, "
+            "SELECT si.issue_no, si.issue_date, l.code AS location, si.customer_name, si.document_ref AS e_invoice_no, si.reason, "
             "i.item_code, i.item_name, x.qty, si.status FROM stock_issues si JOIN stock_issue_items x ON x.issue_id = si.id "
             "JOIN items i ON i.id = x.item_id JOIN locations l ON l.id = si.location_id "
             "WHERE si.issue_date >= :f AND si.issue_date <= :t" + where + " ORDER BY si.issue_date DESC, si.id DESC, i.item_name", **p)
-        cols = ["issue_no", "issue_date", "location", "customer_name", "document_ref", "reason", "item_code", "item_name", "qty", "status"]
+        cols = ["issue_no", "issue_date", "location", "customer_name", "e_invoice_no", "reason", "item_code", "item_name", "qty", "status"]
     elif name == "adjustments":
         d_from, d_to = _dates(args)
         where, p = "", {"f": d_from, "t": d_to + " 23:59:59"}

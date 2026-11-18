@@ -6,8 +6,7 @@
   <span class="badge">{{ 'Regular supplier' if supplier.is_regular else 'Supplier' }}</span>
   {% if not supplier.is_active %}<span class="badge warn">Inactive</span>{% endif %}
 </div>
-<p class="note">Agreed prices are only needed for a regular supplier (the one you use without an RFQ). Adding
-the same item and valid-from date again updates that price.</p>
+<p class="note">Agreed prices are for regular suppliers (no RFQ needed).</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Supplier name', 'supplier_name', 'text',

@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head"><h1>Discrepancies</h1></div>
 {% set tab = 'suppliers' %}{% include 'delivery/_discrepancy_tabs.html' %}
-<p class="page-sub">Goods from a <strong>supplier</strong> that arrived short or were rejected when the warehouse received them. Each one is a discrepancy report (DR).</p>
+<p class="page-sub">Goods from a <strong>supplier</strong> that arrived short or rejected (DR).</p>
 <div class="card">
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search report, PO or supplier...">

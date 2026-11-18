@@ -5,8 +5,7 @@
 <div class="page-head"><h1>Cancel Purchase Order {{ po.po_no }}</h1>
   <span class="badge warn">{{ po.status|replace('_', ' ')|capitalize }}</span>
 </div>
-<p class="note">A draft or sent PO can be cancelled. The REF goes back to the warehouse manager when no other PO is
-active for it. A PO that is already partially received cannot be cancelled.</p>
+<p class="note">A draft or sent PO can be cancelled. A partly received PO cannot.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}

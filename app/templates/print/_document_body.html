@@ -1,31 +1,19 @@
 {% import '_macros.html' as m %}
-<div class="print-header">
-  <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="{{ company }}">
-  <div>
-    <div class="print-brand">{{ company|upper }}</div>
-    <div class="print-sub">Tire Supply &amp; Inventory</div>
-  </div>
-  <div class="print-meta">
-    <div><strong>{{ d.title }}</strong></div>
-    <div>{{ d.doc_no }}</div>
-    <div>{{ d.date }}</div>
-  </div>
-</div>
-
 <div class="card doc">
   <div class="doc-tools no-print">
     <a class="btn small" href="{{ url_for('documents.pdf', doc_type=d.doc_type, doc_id=d.doc_id) }}" download>Download PDF</a>
     <button type="button" class="btn small" data-print-doc>Print</button>
   </div>
   <div class="doc-head">
-    <div>
-      <div class="doc-kicker">{{ company }}</div>
+    <div class="doc-brand">
+      <img class="doc-logo" src="{{ url_for('static', filename='img/logo.svg') }}" alt="">
+      <span class="doc-company">{{ company|upper }}</span>
+    </div>
+    <div class="doc-id">
       <h2 class="doc-title">{{ d.title }}</h2>
       <div class="doc-no">{{ d.doc_no }}</div>
-    </div>
-    <div class="doc-status">
       <div class="doc-date">Date: <strong>{{ d.date }}</strong></div>
-      <div class="badge {{ 'warn' if d.status not in ['Delivered', 'Closed', 'Resolved', 'Received'] }}">{{ d.status }}</div>
+      <div class="doc-status"><span class="badge {{ 'warn' if d.status not in ['Delivered', 'Closed', 'Resolved', 'Received'] }}">{{ d.status }}</span></div>
     </div>
   </div>
 

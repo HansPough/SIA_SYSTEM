@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head"><h1>{{ 'Discrepancies' if current_role in ['owner', 'warehouse_manager'] else 'Delivery Variances' }}</h1>{% if current_role == 'shop_manager' %}<a class="btn ghost" href="{{ url_for('delivery.delivery_list') }}">Incoming deliveries</a>{% endif %}</div>
 {% if current_role in ['owner', 'warehouse_manager'] %}{% set tab = 'shops' %}{% include 'delivery/_discrepancy_tabs.html' %}{% endif %}
-<p class="page-sub">Items a <strong>shop</strong> rejected or found short when it received a delivery from the warehouse. They are recorded when the shop signs the AR.</p>
+<p class="page-sub">Items a <strong>shop</strong> rejected or found short when receiving from the warehouse.</p>
 <div class="card">
 <form method="get" class="filters">
   <select name="status"><option value="">Status: all</option>

@@ -7,16 +7,16 @@
 {% set rejected_vals = f.getlist('qty_rejected[]') %}
 {% set reason_vals = f.getlist('reject_reason[]') %}
 <div class="page-head"><h1>Check Goods (RM)</h1><span class="badge warn">{{ po.po_no }}</span></div>
-<p class="note">Accepted + rejected must equal delivered. Type the accepted quantity and rejected fills in, or type
-rejected and accepted fills in. A short delivery or rejected stock opens a discrepancy report. Only the accepted
-quantity is added to warehouse stock; a later delivery of the missing/rejected units resolves that report
-automatically.</p>
+<p class="note">Accepted + rejected = delivered. A short or rejected quantity opens a discrepancy report.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RM no.', 'rm_no', 'text', value='auto', readonly=True) }}
   {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}
   {{ m.field('Supplier', 'supplier', 'text', value=po.supplier_name, readonly=True) }}
+  {{ m.field('Supplier contact', 'supplier_contact', 'text', value=po.supplier_contact or '–', readonly=True) }}
   {{ m.field('Supplier DR no.', 'supplier_dr_no', 'text', value=f.get('supplier_dr_no', ''), required=True) }}
+  {{ m.field('Supplier invoice no.', 'supplier_invoice_no', 'text', value=f.get('supplier_invoice_no', '')) }}
+  {{ m.field('Delivered by', 'delivered_by', 'text', value=f.get('delivered_by', ''), help='driver or representative') }}
   {{ m.field('Date received', 'received_date', 'date', value=f.get('received_date', ''), required=True) }}
   {{ m.field('Received by', 'received_by', 'text', value=session.get('user_name', 'you'), readonly=True) }}
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
@@ -46,7 +46,7 @@ automatically.</p>
 {% if current_role == 'warehouse_manager' %}
 {{ m.signing_box('Saving signs the receiving memo as checked by you.') }}
 {% else %}
-<p class="note">You do not sign. Your name is recorded as the person who received the goods, and the warehouse manager signs the memo afterwards.</p>
+<p class="note">You do not sign. The warehouse manager signs the memo.</p>
 {% endif %}
 <div class="actions">
   <button type="submit" name="action" value="save_receiving_memo" class="btn primary">Save receiving memo</button>

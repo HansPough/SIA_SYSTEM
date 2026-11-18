@@ -99,8 +99,7 @@ def _signature_image(data_url, max_w, max_h):
 def _header(doc, company, st):
     logo = Image(LOGO_PATH, width=22 * mm, height=22 * mm) if os.path.exists(LOGO_PATH) else ""
     left = [Paragraph("<b>%s</b>" % _t(company.upper()), ParagraphStyle(
-                "brand", parent=st["base"], fontSize=13, leading=16)),
-            Paragraph("Tire Supply &amp; Inventory", st["small"])]
+                "brand", parent=st["base"], fontSize=13, leading=16))]
     right = [Paragraph(_t(doc["title"]), st["right_b"]),
              Paragraph(_t(doc["doc_no"]), ParagraphStyle("no", parent=st["right_b"], fontSize=12, leading=15)),
              Paragraph("Date: %s" % _t(doc["date"]), st["right"]),
@@ -182,12 +181,12 @@ def _signature_block(doc, st):
         flow.append(Spacer(1, 6))
 
     boxes = []
-    sig_w = (CONTENT_W - 12 * mm) / 2
+    sig_w = CONTENT_W / min(max(len(doc["slots"]), 1), 3) - 8 * mm
     for s in doc["slots"]:
         cell = []
         sig = s["signed"]
         if sig:
-            img = _signature_image(sig.get("signature_data"), 52 * mm, 16 * mm)
+            img = _signature_image(sig.get("signature_data"), min(52 * mm, sig_w), 16 * mm)
             cell.append(img if img else Spacer(1, 14 * mm))
             cell.append(Paragraph(_t(sig["signer_name"]), st["name"]))
             cell.append(Paragraph(_t(s["role_title"]), st["small"]))
@@ -207,13 +206,14 @@ def _signature_block(doc, st):
 
     if not boxes:
         return flow
+    per_row = min(len(boxes), 3)             # signatures sit side by side: up to three in a row
     rows = []
-    for i in range(0, len(boxes), 2):
-        pair = boxes[i:i + 2]
-        while len(pair) < 2:
-            pair.append("")
-        rows.append(pair)
-    t = Table(rows, colWidths=[sig_w + 6 * mm, sig_w + 6 * mm])
+    for i in range(0, len(boxes), per_row):
+        row = boxes[i:i + per_row]
+        while len(row) < per_row:
+            row.append("")
+        rows.append(row)
+    t = Table(rows, colWidths=[CONTENT_W / per_row] * per_row)
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEABOVE", (0, 0), (-1, -1), 0.9, INK),
                            ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
                            ("RIGHTPADDING", (0, 0), (-1, -1), 10), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))

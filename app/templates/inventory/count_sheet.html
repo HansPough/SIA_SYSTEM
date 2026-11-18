@@ -3,8 +3,7 @@
 {% block title %}Stock Count{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Stock Count Sheet</h1><span class="badge">{{ locations|length }} location(s)</span></div>
-<p class="note">Count the shelf, type the real quantity, and save. Only lines that differ from the system quantity become
-lines on one pending stock adjustment, which a manager still approves. Leave a line alone if it matches.</p>
+<p class="note">Type the real count. Only differences become a pending adjustment.</p>
 <form method="get" class="filters">
   {% if current_role == 'owner' %}
   <select name="location" onchange="this.form.submit()">

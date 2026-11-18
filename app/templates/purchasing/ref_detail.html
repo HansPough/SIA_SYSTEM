@@ -1,9 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Replenishment Form {{ ref.ref_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Replenishment Form {{ ref.ref_no }}</h1>
-  <span class="badge {{ 'warn' if ref.status in ['draft', 'submitted', 'rfq_sent', 'for_approval'] }}">{{ 'Partly ordered' if ref.partly_ordered else ref.status|replace('_', ' ')|capitalize }}</span>
-</div>
 {% set d = load_document('REF', ref.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
 <div class="card no-print">
@@ -37,7 +34,7 @@
 {% endfor %}
 </tbody>
 </table></div>
-{% if ref.partly_ordered %}<p class="note">Some items are ordered and some are still open. Choose suppliers again for the open items when you have a quotation.</p>{% endif %}
+{% if ref.partly_ordered %}<p class="note">Some items are still open. Choose suppliers again when you have a quotation.</p>{% endif %}
 
 <h2>RFQs and quotations</h2>
 <div class="table-wrap"><table class="data">

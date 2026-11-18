@@ -218,7 +218,7 @@ CREATE TABLE stock_issues (
     location_id   INTEGER NOT NULL REFERENCES locations(id),
     customer_name VARCHAR(120),                                     -- optional, free text (walk-in, or the customer's name)
     issue_date    DATE NOT NULL DEFAULT CURRENT_DATE,
-    document_ref  VARCHAR(40),                                      -- receipt or invoice number
+    document_ref  VARCHAR(40),                                      -- e-invoice number: required for a sale, never repeated (migration 014)
     reason        VARCHAR(10) NOT NULL DEFAULT 'sale' CHECK (reason IN ('sale', 'other')),
     remarks       VARCHAR(200),
     recorded_by   INTEGER NOT NULL REFERENCES users(id),
@@ -432,6 +432,8 @@ CREATE TABLE goods_receipts (             -- RM
     rm_no          VARCHAR(20) NOT NULL UNIQUE,
     po_id          INTEGER NOT NULL REFERENCES purchase_orders(id),
     supplier_dr_no VARCHAR(40),                                      -- the supplier's Delivery Receipt number
+    supplier_invoice_no VARCHAR(40),                                 -- the supplier's invoice number (migration 014)
+    delivered_by   VARCHAR(80),                                      -- who delivered the goods (migration 014)
     received_date  DATE NOT NULL DEFAULT CURRENT_DATE,
     received_by    INTEGER NOT NULL REFERENCES users(id),
     remarks        TEXT,
@@ -665,3 +667,7 @@ INSERT INTO roles (code, name) VALUES
     ('shop_staff',        'Shop Staff'),
     ('warehouse_manager', 'Warehouse Manager'),
     ('warehouse_staff',   'Warehouse Staff');
+
+-- E-invoice numbers must not repeat; a voided sale frees its number (migration 014).
+CREATE UNIQUE INDEX ux_stock_issues_einvoice ON stock_issues (LOWER(document_ref))
+    WHERE document_ref IS NOT NULL AND status <> 'voided';

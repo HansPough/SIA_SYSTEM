@@ -18,8 +18,7 @@
 
 <div class="page-head"><h1>New Replenishment Form</h1><span class="badge">Draft</span></div>
 {% if alert %}
-<p class="note">Pre-filled from restock alert {{ alert.alert_no }}: suggested quantity is the max level minus
-available stock. Submitting this REF completes the alert.</p>
+<p class="note">From alert {{ alert.alert_no }}. Submitting completes the alert.</p>
 {% else %}
 <p class="note">Order stock for the warehouse. The owner approves the supplier and price before a PO is made.</p>
 {% endif %}

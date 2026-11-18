@@ -2,9 +2,8 @@
 {% import '_macros.html' as m %}
 {% block title %}Sign and Release {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Sign and Release TS</h1><span class="badge warn">Loaded</span></div>
-<p class="note no-print">Releasing deducts the items from warehouse stock and sets the TS to <strong>In transit</strong>.
-The shop manager then signs the acknowledgment receipt at the shop.</p>
+<div class="page-head no-print"><h1>Sign and Release TS</h1><span class="badge warn">Loaded</span></div>
+<p class="note no-print">Releasing takes the items out of warehouse stock (<strong>In transit</strong>).</p>
 {% include 'print/_document_body.html' %}
 <form method="post" class="card no-print">
 {% if driver_sig %}

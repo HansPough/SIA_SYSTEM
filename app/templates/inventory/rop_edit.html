@@ -3,9 +3,7 @@
 {% block title %}Edit ROP Settings{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Edit ROP Settings</h1></div>
-<p class="note">Set a separate ROP for the shop and for the warehouse. Max level must be equal to or higher than ROP.
-A ROP of 0 means restock as soon as available stock reaches zero. "Suggested" uses the last 30 days of issues:
-average daily issue × lead time × 1.5, rounded up — a guide, not a rule.</p>
+<p class="note">Max level is at least the ROP. Suggested ROP = 30-day average issues &times; lead time &times; 1.5.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Item', 'item', 'text', value=data.item.item_name, readonly=True) }}

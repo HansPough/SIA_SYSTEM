@@ -120,3 +120,21 @@ Run `psql -U postgres -d inventory_db -v ON_ERROR_STOP=1 -f database/migrations/
   The group of the page you are on is always open. (It used to behave like an accordion and closed the others.)
 - **Scenario seed.** `python scripts/seed_scenarios.py --reset --yes` builds 40 scenarios on a demo database by driving the real
   screens, and writes a guide (`docs/TEST_SCENARIOS.md`). See that file for the safety rules.
+## Documents, RF queue, input details and shorter wording (migration 014 for existing databases)
+Run `psql -U postgres -d inventory_db -v ON_ERROR_STOP=1 -f database/migrations/014_invoice_and_supplier_details.sql`
+(new installs get it from `schema.sql`), then `python scripts/check_setup.py`.
+
+- **One header per document.** The document card is the only header, and it matches the PDF: logo and company name on the left,
+  title, number, date and status on the right. The separate print header, the second page title and the "Tire Supply &amp; Inventory"
+  tagline are gone (screen, print and PDF). Printing a TS page that also shows its AR puts each on its own page.
+- **Signatures sit side by side** (up to three per row) on screen, in print and in the PDF.
+- **Checkboxes** in tables are one centered column with no text beside the box (loading check, shop receiving).
+- **RF queue.** Each RF shows one stage: Ready to reserve, Waiting for stock, Ready for transfer, Transfer in progress, In transit.
+  The button is always **Review RF** (highlighted only when something can be reserved), or **Create transfer** / **Open transfer**.
+  When no stock is available there is no Reserve button on the RF page, only "Waiting for stock" and a link to the restock alert.
+  Pressing an old Reserve button with no stock no longer says "Reserved 0 unit(s)". The shortage goes to the restock alert
+  when the RF is sent, so nobody has to press a button to flag it.
+- **Stock out:** the e-invoice number is required for a sale and is used once (case-insensitive). A voided sale frees its number.
+- **Receiving from a supplier:** supplier contact is shown; the supplier DR number and invoice number are each used once per
+  supplier; new optional fields **Supplier invoice no.** and **Delivered by** appear on the receiving memo.
+- **Wording.** 37 long instructions were cut to one short line each (about 8,900 to 3,500 characters of instruction text).

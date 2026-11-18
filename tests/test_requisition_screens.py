@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from app import create_app
 from app import inventory_service as inv
 from app import inventory_ops as inv_ops
-from sqlite_schema import SqliteBackend
+from sqlite_schema import SqliteBackend, next_invoice
 
 WH, SHOP, SHOP2 = 1, 2, 3
 A, B = 1, 2
@@ -59,7 +59,7 @@ class Base(unittest.TestCase):
     def make_alert(self, qty=5):
         """Sell enough at the shop to reach the ROP, which makes Inventory raise the alert."""
         self.login("shopstaff")
-        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                     "item_id[]": [str(A)], "qty[]": [str(qty)]})
         return self.be.one("SELECT * FROM notifications WHERE notif_type = 'low_stock'")
 
@@ -121,7 +121,7 @@ class AlertScreenTests(Base):
         self.c.post("/requisition/alerts/1/dismiss", data={"dismissed_reason": "slow item"})
         # another sale keeps the item low: Inventory makes a fresh alert, it does not reopen the old one
         self.login("shopstaff")
-        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                     "item_id[]": [str(A)], "qty[]": ["1"]})
         rows = self.be.all("SELECT id, status FROM notifications ORDER BY id")
         self.assertEqual(rows[0]["status"], "dismissed")

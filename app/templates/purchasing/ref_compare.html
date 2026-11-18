@@ -3,11 +3,7 @@
 {% block title %}Choose Suppliers {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Choose Suppliers</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
-<p class="note">For each item, pick the supplier to order it from. Different items can go to different suppliers: the owner
-approves them together and each supplier gets its own purchase order. If nobody can supply an item yet, choose
-<strong>keep it open</strong>, then <strong>ask more suppliers (new RFQ)</strong> or record another quotation. A supplier
-having "no stock" is not a reason to give up. Giving up an item you will not order at all is done from the REF page, and
-it can be restored.</p>
+<p class="note">Pick a supplier per item. Not now? <strong>Keep it open</strong> and ask more suppliers.</p>
 
 {% if data.pending %}
 <div class="flash">This REF is already waiting for the owner's decision.</div>

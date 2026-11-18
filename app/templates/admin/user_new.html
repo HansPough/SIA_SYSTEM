@@ -3,7 +3,7 @@
 {% block title %}New User{% endblock %}
 {% block content %}
 <div class="page-head"><h1>New User</h1></div>
-<p class="note">Owner only. Drivers and suppliers do not have accounts. The password is stored as a hash and the user can log in immediately.</p>
+<p class="note">Owner only. Drivers and suppliers have no accounts.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Username', 'username', 'text', value=f.get('username', ''), required=True) }}

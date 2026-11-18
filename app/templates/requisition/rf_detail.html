@@ -1,9 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Requisition Form {{ rf.rf_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Requisition Form {{ rf.rf_no }}</h1>
-  <span class="badge {{ 'warn' if rf.status in ['draft', 'open', 'partially_delivered'] }}">{{ rf.status|replace('_', ' ')|capitalize }}</span>
-</div>
 {% include 'print/_document_body.html' %}
 <details class="card no-print"><summary>Progress and details</summary>
 <dl class="info">

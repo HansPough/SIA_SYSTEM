@@ -2,7 +2,7 @@
 {% block title %}Create Transfer Slip{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Create Transfer Slip</h1></div>
-<p class="note">Choose a driver and vehicle for the reserved stock. Staff will check the load before the manager releases it.</p>
+<p class="note">Choose a driver and vehicle for the reserved stock.</p>
 {% if not drivers or not vehicles %}<p class="note">Add an active <a href="{{ url_for('delivery.driver_list') }}">driver</a> and <a href="{{ url_for('delivery.vehicle_list') }}">vehicle</a> to assign this transfer.</p>{% endif %}
 {% if selected %}
 <div class="card">

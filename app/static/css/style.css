@@ -217,6 +217,9 @@ table.data tbody tr:hover { background: #fafbfc; }
 table.data tfoot td { border-top: 2px solid var(--line); border-bottom: 0; background: #fafbfc; }
 table.data td small { display: block; margin: 1px 0 0; color: var(--muted); }
 table.data a:not(.btn) { font-weight: 600; }
+/* a column of checkboxes: centered under its header, no text beside the box */
+table.data th.check-cell, table.data td.check-cell { text-align: center; width: 1%; white-space: nowrap; padding-left: 16px; padding-right: 16px; }
+table.data td.check-cell input[type=checkbox] { width: 20px; height: 20px; margin: 0; vertical-align: middle; cursor: pointer; }
 td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.nowrap, td:has(> .badge), td:has(> .btn), td:has(> form) { white-space: nowrap; }
 td.row-actions, th.row-actions, td:has(> .btn:only-child) { text-align: right; width: 1%; }
@@ -254,23 +257,17 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .snooze-note { color: #3b3fa8; font-weight: 600; font-size: 12px; }
 
 /* ---------- print ---------- */
-.print-header { display: none; }
 @media print {
   @page { size: A4; margin: 14mm; }
   body { background: #fff; font-size: 11pt; color: #000; }
-  .topbar, .sidebar, .nav-toggle, .skip-link, .actions, .flash, .pager, .no-print, .filters { display: none !important; }
+  .topbar, .sidebar, .nav-toggle, .skip-link, .actions, .flash, .pager, .no-print, .filters, .page-head, .page-sub { display: none !important; }
   .shell { display: block; }
   .content { max-width: none; padding: 0; }
   .card { border: 0; box-shadow: none; padding: 0; margin: 0 0 12pt; }
   .table-wrap { border: 0; overflow: visible; }
-  .print-header { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 14px; }
-  .print-header img { width: 48px; height: 48px; }
-  .print-header .print-brand { font-weight: 800; letter-spacing: .12em; }
-  .print-header .print-sub { font-size: 9pt; color: #333; }
-  .print-meta { margin-left: auto; text-align: right; font-size: 9pt; }
   table.data th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; position: static; }
   a { color: #000; text-decoration: none; }
-  .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24pt; margin-top: 26pt; }
+  .sign-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150pt, 1fr)); gap: 18pt; margin-top: 22pt; }
   .sign-box { border-top: 1px solid #000; padding-top: 4pt; font-size: 9pt; }
   .signature-img { max-height: 34pt; display: block; margin-bottom: 2pt; }
 }
@@ -283,19 +280,22 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .doc-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .doc { margin-top: 0; }
 .doc-tools { display: flex; justify-content: flex-end; gap: 8px; margin: -4px 0 14px; }
-.doc-head { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
-.doc-kicker { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.doc-title { margin: 4px 0 2px; font-size: 24px; }
-.doc-no { font-size: 14px; font-weight: 700; letter-spacing: .06em; color: var(--accent-dark); }
-.doc-status { text-align: right; font-size: 12px; }
-.doc-date { margin-bottom: 7px; color: var(--muted); }
+.doc-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.doc-brand { display: flex; align-items: center; gap: 14px; }
+.doc-logo { width: 58px; height: 58px; object-fit: contain; }
+.doc-company { font-weight: 800; letter-spacing: .1em; font-size: 16px; }
+.doc-id { text-align: right; }
+.doc-title { margin: 0; font-size: 20px; }
+.doc-no { font-size: 15px; font-weight: 700; letter-spacing: .04em; margin: 2px 0; }
+.doc-date { color: var(--muted); font-size: 12.5px; }
+.doc-status { margin-top: 6px; }
 .doc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 18px 0; }
 .doc-parties span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px; }
 .doc-parties strong { font-size: 14px; }
 .doc-meta { margin: 14px 0 6px; }
 .doc-items { margin-top: 4px; }
 .doc-notes p { margin: 4px 0; }
-.sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 10px; }
+.sign-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 22px; margin-top: 10px; }
 .sign-box { border-top: 1.5px solid var(--ink); padding-top: 7px; min-height: 84px; }
 .sign-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sign-name { font-size: 15px; font-weight: 700; margin-top: 8px; }
@@ -306,8 +306,11 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .sign-form input { max-width: 170px; padding: 5px 7px; font-size: 12px; }
 .doc-foot { margin-top: 22px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 7px; }
 @media print {
+  /* a printed page is narrow, but it is not a phone: keep the two-column document layout */
+  .doc-parties { grid-template-columns: 1fr 1fr !important; }
+  .doc ~ .doc { break-before: page; }              /* a second document (a TS and its AR) starts on its own page */
+  .doc { break-inside: avoid; }
   body.print-one .doc:not(.print-target) { display: none !important; }
-  body.print-one .print-header:not(:has(+ .print-target)) { display: none !important; }
   .doc-tools { display: none !important; }
   .doc-toolbar { display: none !important; }
   .doc-head { border-bottom: 1px solid #000; }
@@ -353,7 +356,7 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
   .content { padding: 20px 16px 40px; }
   .grid { grid-template-columns: 1fr; }
   .field.span-2 { grid-column: span 1; }
-  .doc-parties, .sign-grid { grid-template-columns: 1fr; }
+  .doc-parties { grid-template-columns: 1fr; }
   .topbar { padding: 0 14px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

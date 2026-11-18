@@ -3,14 +3,13 @@
 {% block title %}Dismiss Alert {{ alert.alert_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Dismiss Alert {{ alert.alert_no }}</h1><span class="badge warn">Active</span></div>
-<p class="note">The reason is saved with the alert. A dismissed restock alert is not reopened; the next stock
-movement of a still-low item creates a new one.</p>
+<p class="note">The reason is saved. A new alert appears if the item is still low.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Alert', 'alert_no', 'text', value=alert.alert_no, readonly=True) }}
   {{ m.field('Warehouse', 'warehouse', 'text', value=alert.warehouse, readonly=True) }}
   {{ m.field('Reason for dismissing', 'dismissed_reason', 'textarea', value=f.get('dismissed_reason', ''),
-             required=True, col=2, help='for example: stock already ordered, or the item is being discontinued') }}
+             required=True, col=2, help='for example: already ordered') }}
 </div>
 <div class="actions">
   <button type="submit" name="action" value="dismiss_alert" class="btn danger">Dismiss alert</button>

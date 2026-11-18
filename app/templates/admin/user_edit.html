@@ -21,7 +21,7 @@
       {% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if loc_sel|string == l.id|string }}>{{ l.code }} — {{ l.name }} ({{ l.loc_type }})</option>{% endfor %}
     </select>
   </div>
-  {{ m.field('New password', 'password', 'password', help='Leave blank to keep the current password. At least 8 characters when changed.') }}
+  {{ m.field('New password', 'password', 'password', help='blank = keep the current one, minimum 8 characters') }}
   {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or (not f and user.is_active)), help=' user can log in') }}
 </div>
 <div class="actions">

@@ -159,6 +159,7 @@ def rf_new():
                 alert_id=alert["id"] if alert else None)
             if status == "open":      # sending the form signs it, in the same save
                 docs.sign_on_action(user, "RF", rf_id, "requested_by")
+                inventory_ops.register_rf_shortages(rf_id)      # what the warehouse cannot cover is flagged now
             inv.commit()
         except InventoryError as e:
             inv.rollback()
@@ -191,6 +192,7 @@ def rf_detail(rf_id):
             try:
                 rf_no = rq.submit_rf(user, rf_id)
                 docs.sign_on_action(user, "RF", rf_id, "requested_by")
+                inventory_ops.register_rf_shortages(rf_id)      # what the warehouse cannot cover is flagged now
                 inv.commit()
             except InventoryError as e:
                 inv.rollback()

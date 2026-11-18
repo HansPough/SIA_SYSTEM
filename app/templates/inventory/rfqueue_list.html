@@ -10,14 +10,14 @@
   <button class="btn" type="submit">Filter</button>
 </form>
 <div class="table-wrap"><table class="data">
-<thead><tr><th>RF no.</th><th>Date</th><th>Shop</th><th class="num">Items</th><th class="num">Waiting for stock</th><th>Status</th><th></th></tr></thead>
+<thead><tr><th>RF no.</th><th>Date</th><th>Shop</th><th class="num">Items</th><th class="num">Open lines</th><th>Stage</th><th></th></tr></thead>
 <tbody>
-{% for r in res.rows %}<tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ (r.rf_date|string)[:10] }}</td><td>{{ r.shop }}</td><td class="num">{{ r.n_items }}</td><td class="num">{{ r.n_waiting }}</td><td><span class="badge {{ 'warn' if r.n_waiting }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td><td>{% if r.active_transfer_id and (not r.n_waiting or r.active_transfer_status in ['draft', 'assigned', 'loaded']) %}
-<a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.active_transfer_id) }}">Open transfer</a>
-{% elif r.n_waiting %}<a class="btn small primary" href="{{ url_for('inventory.rfqueue_review', rf_id=r.id) }}">Review stock</a>
-{% elif r.n_reserved %}<a class="btn small primary" href="{{ url_for('delivery.transfer_new', rf_id=r.id) }}">Create transfer</a>
-{% else %}<a class="btn small" href="{{ url_for('inventory.rfqueue_review', rf_id=r.id) }}">View requisition</a>{% endif %}</td></tr>
-{% else %}<tr><td colspan="7" class="muted">No requisitions waiting. They appear here when a shop submits an RF.</td></tr>{% endfor %}
+{% for r in res.rows %}<tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ (r.rf_date|string)[:10] }}</td><td>{{ r.shop }}</td><td class="num">{{ r.n_items }}</td><td class="num">{{ r.n_waiting }}</td>
+<td><span class="badge {{ r.tone }}">{{ r.stage }}</span></td>
+<td class="row-actions">{% if r.next_kind == 'transfer' %}<a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.active_transfer_id) }}">{{ r.next_label }}</a>
+{% elif r.next_kind == 'create' %}<a class="btn small primary" href="{{ url_for('delivery.transfer_new', rf_id=r.id) }}">{{ r.next_label }}</a>
+{% else %}<a class="btn small {{ 'primary' if r.next_primary }}" href="{{ url_for('inventory.rfqueue_review', rf_id=r.id) }}">{{ r.next_label }}</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No requisitions waiting.</td></tr>{% endfor %}
 </tbody>
 </table></div>
 {{ m.pager(res, 'inventory.rfqueue_list', f) }}

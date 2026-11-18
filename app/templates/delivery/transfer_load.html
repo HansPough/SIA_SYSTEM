@@ -1,20 +1,19 @@
 {% extends 'base.html' %}
 {% block title %}Loading Check {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Loading Check</h1><span class="badge warn">Assigned</span></div>
-<p class="note no-print">Tick each line after counting the items against the TS. Every line must be checked before the
-warehouse manager can release the stock.</p>
+<div class="page-head no-print"><h1>Loading Check</h1><span class="badge warn">Assigned</span></div>
+<p class="note no-print">Tick each line after counting. All lines are needed before release.</p>
 {% include 'print/_document_body.html' %}
 <form method="post" class="card no-print">
 
 <h2>Items</h2>
 <div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">Qty on TS</th><th>Loaded and checked</th></tr></thead>
+<thead><tr><th class="check-cell">Loaded</th><th>Item</th><th class="num">Qty on TS</th></tr></thead>
 <tbody>
 {% for l in ts.lines %}
-<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
-<td class="num">{{ l.qty_released }}</td>
-<td><label class="check"><input type="checkbox" name="loaded[]" value="{{ l.ts_item_id }}"> counted</label></td></tr>
+<tr><td class="check-cell"><input type="checkbox" name="loaded[]" value="{{ l.ts_item_id }}" aria-label="Loaded: {{ l.item_name }}"></td>
+<td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_released }}</td></tr>
 {% endfor %}
 </tbody>
 </table></div>

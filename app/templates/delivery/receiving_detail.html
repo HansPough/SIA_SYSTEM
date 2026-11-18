@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Receiving Memo {{ rm.rm_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Receiving Memo {{ rm.rm_no }}</h1></div>
 {% set d = load_document('RM', rm.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
 <details class="card no-print"><summary>Progress and details</summary>

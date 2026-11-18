@@ -10,7 +10,7 @@
   {{ m.field('Date', 'issue_date', 'date', value=f.get('issue_date', ''), required=True) }}
   {{ m.field('Location', 'location', 'text', value=location.code ~ ' (' ~ location.loc_type ~ ')', readonly=True) }}
   {{ m.field('Customer name (optional)', 'customer_name', 'text', value=f.get('customer_name', ''), help='for example: walk-in customer') }}
-  {{ m.field('Receipt / invoice no.', 'document_ref', 'text', value=f.get('document_ref', '')) }}
+  {{ m.field('E-invoice no.', 'document_ref', 'text', value=f.get('document_ref', ''), required=True, help='one number per sale, never reused') }}
   <div class="field span-1"><label for="reason">Reason<span class="req">*</span></label>
     <select id="reason" name="reason"><option value="">-- select --</option><option value="sale" {{ 'selected' if f.get('reason') == 'sale' }}>Sale</option><option value="other" {{ 'selected' if f.get('reason') == 'other' }}>Other</option></select></div>
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}

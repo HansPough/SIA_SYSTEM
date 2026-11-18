@@ -384,8 +384,12 @@ def run(app):
     s1, s2 = take(2, both)
     healthy([s1, s2], shop=30)
 
+    einv = [0]
+
     def sale(item, qty, customer):
+        einv[0] += 1                                   # every sale has its own e-invoice number
         shopstaff.post("/inventory/issues/new", {"issue_date": TODAY.isoformat(), "reason": "sale",
+                       "document_ref": "EI-2026-%05d" % einv[0],
                        "customer_name": customer, "item_id[]": [item["id"]], "qty[]": [qty]}, "record sale")
         return latest("stock_issues"), latest("stock_issues", "issue_no")
 
@@ -581,12 +585,17 @@ def run(app):
         whmgr.post("/purchasing/po/%d" % po["id"], {"action": "mark_sent"}, "send PO")
         return ref_id, ref_no, po
 
+    receipts = [0]
+    carriers = ["Mang Lito (driver)", "Rey Santos (helper)", "Highland truck 2", ""]
+
     def receive(actor, po, delivered=None, rejected=None, reason=""):
         items = q("SELECT id, qty_ordered, qty_received FROM purchase_order_items WHERE po_id = :p ORDER BY id", p=po["id"])
         deliv = [(delivered[i] if delivered else it_["qty_ordered"] - it_["qty_received"]) for i, it_ in enumerate(items)]
         rej = [(rejected[i] if rejected else 0) for i in range(len(items))]
+        receipts[0] += 1                               # a supplier's DR and invoice numbers are each used once
         actor.post("/delivery/receiving/%d/check" % po["id"], {
-            "supplier_dr_no": "DR-%05d" % (po["id"] * 137), "received_date": TODAY.isoformat(),
+            "supplier_dr_no": "DR-%05d" % (4000 + receipts[0]), "supplier_invoice_no": "SI-%05d" % (9000 + receipts[0]),
+            "delivered_by": carriers[receipts[0] % len(carriers)], "received_date": TODAY.isoformat(),
             "po_item_id[]": [i["id"] for i in items], "qty_delivered[]": deliv,
             "qty_accepted[]": [d - r for d, r in zip(deliv, rej)], "qty_rejected[]": rej,
             "reject_reason[]": [reason if r else "" for r in rej]}, "receive goods")

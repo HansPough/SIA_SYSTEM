@@ -1,13 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}Purchase Order {{ po.po_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Purchase Order {{ po.po_no }}</h1>
-  <span class="badge {{ 'warn' if po.status == 'draft' }}">{{ po.status|po_status }}</span>
-</div>
 {% if po.status == 'draft' %}
-<p class="note">The owner has approved this PO.
-{% if current_role == 'warehouse_manager' %}Send it to the supplier yourself (the system does not send email), then press
-<strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it to the supplier.{% endif %}</p>
+<p class="note">Owner approved. {% if current_role == 'warehouse_manager' %}Send it to the supplier, then press <strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it to the supplier.{% endif %}</p>
 {% endif %}
 {% set d = load_document('PO', po.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}

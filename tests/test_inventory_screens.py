@@ -10,7 +10,7 @@ import unittest
 
 from app import create_app
 from app import inventory_service as inv
-from sqlite_schema import SqliteBackend
+from sqlite_schema import SqliteBackend, next_invoice
 
 TIRE_A, TIRE_B = 1, 2
 
@@ -55,7 +55,7 @@ class ScreenTests(unittest.TestCase):
     # ---- sales / issues ----
     def test_sale_deducts_stock_and_writes_ledger(self):
         self.login("shopstaff")
-        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                         "customer_name": "Walk-in", "item_id[]": [str(TIRE_A)], "qty[]": ["3"]})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(self.bal(TIRE_A, 2), 7)
@@ -67,14 +67,14 @@ class ScreenTests(unittest.TestCase):
 
     def test_oversell_is_rejected_and_nothing_is_saved(self):
         self.login("shopstaff")
-        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                         "item_id[]": [str(TIRE_B)], "qty[]": ["5"]})
         self.assertEqual(r.status_code, 200)
         self.assertIn("Not enough stock", " ".join(self.flashes(r)))
         self.assertEqual(self.bal(TIRE_B, 2), 4)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM stock_issues")["n"], 0)
         # the failed try must not burn a document number
-        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                     "item_id[]": [str(TIRE_B)], "qty[]": ["1"]})
         self.assertEqual(self.be.one("SELECT issue_no FROM stock_issues")["issue_no"], "ISS-2026-0001")
 
@@ -82,27 +82,27 @@ class ScreenTests(unittest.TestCase):
         inv.reserve(1, TIRE_A, 2, 8)
         self.be.commit()
         self.login("shopstaff")
-        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                         "item_id[]": [str(TIRE_A)], "qty[]": ["3"]})
         self.assertIn("reserved", " ".join(self.flashes(r)))
         self.assertEqual(self.bal(TIRE_A, 2), 10)
 
     def test_same_item_twice_is_merged_and_form_validation(self):
         self.login("shopstaff")
-        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                     "item_id[]": [str(TIRE_A), str(TIRE_A)], "qty[]": ["2", "3"]})
         self.assertEqual(self.bal(TIRE_A, 2), 5)
         for bad in ({"issue_date": "2999-01-01", "reason": "sale"}, {"issue_date": "2026-10-30", "reason": ""}):
             r = self.c.post("/inventory/issues/new", data=dict(bad, **{"item_id[]": [str(TIRE_A)], "qty[]": ["1"]}))
             self.assertEqual(r.status_code, 200)
-        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        r = self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                         "item_id[]": [str(TIRE_A)], "qty[]": ["0"]})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.bal(TIRE_A, 2), 5)
 
     def test_shop_user_cannot_open_another_locations_issue(self):
         self.login("shopstaff")
-        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale",
+        self.c.post("/inventory/issues/new", data={"issue_date": "2026-10-30", "reason": "sale", "document_ref": next_invoice(),
                     "item_id[]": [str(TIRE_A)], "qty[]": ["1"]})
         self.be.execute("UPDATE users SET location_id = 1 WHERE username = 'shopmgr'")
         self.be.commit()

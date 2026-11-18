@@ -57,6 +57,7 @@ CREATE TABLE acknowledgment_receipt_items (id INTEGER PRIMARY KEY AUTOINCREMENT,
   qty_expected INTEGER, qty_received INTEGER, qty_variance INTEGER GENERATED ALWAYS AS (qty_received - qty_expected) STORED,
   variance_reason TEXT, variance_resolved_at TEXT, UNIQUE (ar_id, ts_item_id));
 CREATE TABLE goods_receipts (id INTEGER PRIMARY KEY AUTOINCREMENT, rm_no TEXT UNIQUE, po_id INTEGER, supplier_dr_no TEXT,
+  supplier_invoice_no TEXT, delivered_by TEXT,
   received_date TEXT, received_by INTEGER, remarks TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE goods_receipt_items (id INTEGER PRIMARY KEY AUTOINCREMENT, rm_id INTEGER, po_item_id INTEGER, item_id INTEGER,
   qty_delivered INTEGER, qty_accepted INTEGER, qty_rejected INTEGER NOT NULL DEFAULT 0, reject_reason TEXT);
@@ -134,3 +135,12 @@ class SqliteBackend:
 
     def rollback(self):
         self.db.rollback()
+
+
+_invoice_counter = [0]
+
+
+def next_invoice():
+    """A fresh e-invoice number: every sale now needs its own."""
+    _invoice_counter[0] += 1
+    return "EI-%06d" % _invoice_counter[0]

@@ -624,6 +624,8 @@ def receiving_form(po_id, warehouse_id):
         "FROM purchase_order_items poi JOIN items i ON i.id = poi.item_id "
         "WHERE poi.po_id = :p ORDER BY i.item_name", p=po_id)
     po["lines"] = [i for i in po["lines"] if i["remaining"] > 0]
+    sup = _b().one("SELECT contact_person, phone, email FROM suppliers WHERE id = :s", s=po["supplier_id"]) or {}
+    po["supplier_contact"] = " · ".join(x for x in (sup.get("contact_person"), sup.get("phone"), sup.get("email")) if x)
     return po
 
 
@@ -685,7 +687,8 @@ def _apply_discrepancy_replacements(user_id, rm_no, lines):
     return resolved
 
 
-def receive_goods(user, po_id, supplier_dr_no, received_date, remarks, pairs):
+def receive_goods(user, po_id, supplier_dr_no, received_date, remarks, pairs,
+                  supplier_invoice_no=None, delivered_by=None):
     """Warehouse staff record an RM.
 
     Returns (rm_id, rm_no, discrepancy_no, resolved_discrepancy_nos).
@@ -705,6 +708,21 @@ def receive_goods(user, po_id, supplier_dr_no, received_date, remarks, pairs):
         raise InventoryError("The supplier's delivery receipt number is required.")
     if len(dr) > 40:
         raise InventoryError("The supplier DR number can be at most 40 characters.")
+    invoice = (supplier_invoice_no or "").strip()
+    carrier = (delivered_by or "").strip()                  # (not `delivered`: that name is the per-line quantity below)
+    if len(invoice) > 40:
+        raise InventoryError("The supplier invoice number can be at most 40 characters.")
+    if len(carrier) > 80:
+        raise InventoryError("'Delivered by' can be at most 80 characters.")
+    # A supplier's DR number and invoice number are each used once. Catch a number typed twice.
+    for label, value, column in (("DR no.", dr, "supplier_dr_no"), ("Invoice no.", invoice, "supplier_invoice_no")):
+        if value:
+            used = _b().one(
+                "SELECT gr.rm_no FROM goods_receipts gr JOIN purchase_orders p ON p.id = gr.po_id "
+                "WHERE p.supplier_id = :s AND LOWER(gr.%s) = LOWER(:v) LIMIT 1" % column,
+                s=po["supplier_id"], v=value)
+            if used:
+                raise InventoryError("%s %s from this supplier was already recorded on %s." % (label, value, used["rm_no"]))
     d = _date(received_date, "Date received") or _today()
     remarks = (remarks or "").strip()
     if len(remarks) > 500:
@@ -758,9 +776,10 @@ def receive_goods(user, po_id, supplier_dr_no, received_date, remarks, pairs):
 
     rm_no = inv.next_doc_no("RM")
     row = _b().one(
-        "INSERT INTO goods_receipts (rm_no, po_id, supplier_dr_no, received_date, received_by, remarks) "
-        "VALUES (:no, :po, :dr, :d, :u, :r) RETURNING id",
-        no=rm_no, po=po_id, dr=dr, d=d.isoformat(), u=user["id"], r=remarks or None)
+        "INSERT INTO goods_receipts (rm_no, po_id, supplier_dr_no, supplier_invoice_no, delivered_by, "
+        "received_date, received_by, remarks) VALUES (:no, :po, :dr, :inv, :by, :d, :u, :r) RETURNING id",
+        no=rm_no, po=po_id, dr=dr, inv=invoice or None, by=carrier or None, d=d.isoformat(),
+        u=user["id"], r=remarks or None)
     rm_id = row["id"]
     accepted_items = []
     discrepancy_lines = []

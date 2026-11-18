@@ -41,6 +41,16 @@ def _date(value):
     return _text(value, 10)
 
 
+def _status_label(doc_type, status):
+    """What the status badge says. An approved PO is 'Ready to send', not 'Draft'."""
+    raw = _text(status)
+    if doc_type == "PO" and raw == "draft":
+        return "Ready to send"
+    if raw == "partly_ordered":
+        return "Partly ordered"
+    return raw.replace("_", " ").title()
+
+
 def _slot_data(doc_type, doc_id, user, doc_hash):
     """One entry per signature line, ready for the page and the PDF."""
     signatures = signing.signatures_for(doc_type, doc_id)
@@ -70,8 +80,7 @@ def _document(doc_type, title, doc_no, status, date, party_from, party_to,
         "doc_type": doc_type,
         "title": title,
         "doc_no": doc_no,
-        "status": ("Ready To Send" if (doc_type == "PO" and _text(status) == "draft")
-                   else _text(status).replace("_", " ").title()),
+        "status": _status_label(doc_type, status),
         "date": _date(date),
         "party_from": party_from,
         "party_to": party_to,
@@ -122,7 +131,7 @@ def _load_ref(doc_id, user):
               "note": "%s received" % l["qty_received"] if l["qty_received"] else ""}
              for l in head["lines"]]
     return _document(
-        "REF", TITLES["REF"], head["ref_no"], head["status"],
+        "REF", TITLES["REF"], head["ref_no"], "partly_ordered" if head.get("partly_ordered") else head["status"],
         head.get("submitted_at") or head.get("created_at"),
         ("From", "Warehouse %s" % head["warehouse"]),
         ("To", "Purchasing / Supplier"),
@@ -212,8 +221,9 @@ def _load_rm(doc_id, user):
         "RM", TITLES["RM"], rm["rm_no"], "received", rm["received_date"],
         ("Supplier", rm["supplier_name"]),
         ("Received at", _location(rm["warehouse_id"])),
-        [("PO no.", rm["po_no"]), ("Supplier DR no.", rm["supplier_dr_no"] or "–"),
-         ("REF no.", rm["ref_no"])],
+        [("PO no.", rm["po_no"]), ("REF no.", rm["ref_no"]), ("Supplier DR no.", rm["supplier_dr_no"] or "–")]
+        + ([("Supplier invoice no.", rm["supplier_invoice_no"])] if rm.get("supplier_invoice_no") else [])
+        + ([("Delivered by", rm["delivered_by"])] if rm.get("delivered_by") else []),
         items, user, doc_id, notes=[rm.get("remarks")],
         prepared=[("Received by", rm["received_by_name"])])
 

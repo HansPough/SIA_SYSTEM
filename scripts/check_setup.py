@@ -39,6 +39,7 @@ REQUIRED_COLUMNS = {
     "purchase_orders": ["expected_date", "terms"],
     "document_signatures": ["signer_role", "doc_hash", "ip_address", "captured_by_user_id"],     # migrations 010, 011
     "transfer_slips": ["driver_paper_reason"],                                           # migration 011
+    "goods_receipts": ["supplier_invoice_no", "delivered_by"],                           # migration 014
     "notifications": ["snoozed_until", "snoozed_by"],                                    # migration 013
     "purchase_approvals": ["batch_id"],                                                  # migration 012
     "replenishment_items": ["qty_dropped", "dropped_reason"],                            # migration 012

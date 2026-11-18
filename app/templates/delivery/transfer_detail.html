@@ -1,13 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Transfer Slip {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Transfer Slip {{ ts.ts_no }}</h1>
-  <span class="badge {{ 'warn' if ts.status in ['draft', 'assigned', 'loaded', 'in_transit'] }}">{{ ts.status|replace('_', ' ')|capitalize }}</span>
-</div>
 {% include 'print/_document_body.html' %}
 {% if ts.ar %}
 {% set d = load_document('AR', ts.ar.id) %}
-{% if d %}<h2 class="no-print">Acknowledgment receipt</h2>
+{% if d %}
 {% include 'print/_document_body.html' %}
 {% endif %}
 {% endif %}

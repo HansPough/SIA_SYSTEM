@@ -9,10 +9,7 @@
 {% set qdate = f.get('quotation_date') or ((data.existing.quotation_date|string)[:10] if data.existing else data.today) %}
 {% set vdate = f.get('valid_until') or ((data.existing.valid_until|string)[:10] if data.existing and data.existing.valid_until else '') %}
 <div class="page-head"><h1>Record Quotation</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
-<p class="note">The supplier replies by email; enter the reply here. The supplier list includes every active supplier,
-with the ones this RFQ was sent to first. Unit prices are pre-filled from that supplier's agreed prices when they
-have them; change any price the supplier actually quoted. Saving the same supplier again replaces their earlier
-quotation for this RFQ.</p>
+<p class="note">Enter the supplier's reply. Saving a supplier again replaces its quotation.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RFQ no.', 'rfq_no', 'text', value=data.rfq.rfq_no, readonly=True) }}
