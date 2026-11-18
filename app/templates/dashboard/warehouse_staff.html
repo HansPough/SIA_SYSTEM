@@ -4,9 +4,9 @@
 {% block content %}
 <div class="page-head"><h1>Dashboard</h1><span class="badge">Warehouse Staff</span></div>
 <div class="cards">
-  <a class="tile" href="{{ url_for('delivery.receiving_list') }}"><h3>Goods to receive</h3><p>POs waiting for delivery: {{ dash.pos_waiting_delivery if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('delivery.transfer_list') }}"><h3>Transfers to load</h3><p>Assigned TS: {{ dash.assigned_transfers if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('inventory.adjustment_list') }}"><h3>Stock adjustments</h3><p>My adjustments waiting: {{ dash.my_pending_adjustments if dash else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('delivery.receiving_list') }}"><h3>To receive</h3><p>{{ dash.pos_waiting_delivery if dash else 0 }} order(s)</p></a>
+  <a class="tile" href="{{ url_for('delivery.transfer_list') }}"><h3>To load</h3><p>{{ dash.assigned_transfers if dash else 0 }} transfer(s)</p></a>
+  <a class="tile" href="{{ url_for('inventory.adjustment_list') }}"><h3>Adjustments</h3><p>{{ dash.my_pending_adjustments if dash else 0 }} waiting</p></a>
   <a class="tile" href="{{ url_for('inventory.stock_list') }}"><h3>Stock</h3><p>Warehouse stock</p></a>
 </div>
 {% endblock %}

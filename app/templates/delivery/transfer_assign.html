@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Assign Driver and Vehicle {{ ts.ts_no }}{% endblock %}
+{% block title %}Assign transfer {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Assign Driver and Vehicle</h1><span class="badge warn">Draft</span></div>
-<p class="note">The driver and vehicle appear on the TS. Only active drivers and vehicles are listed.</p>
+<div class="page-head"><h1>Assign transfer</h1>{{ m.status('draft') }}</div>
+<p class="note">They appear on the TS.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}
@@ -15,14 +15,14 @@
       <option value="">-- select --</option>
       {% for d in drivers if d.is_active %}<option value="{{ d.id }}" {{ 'selected' if f.get('driver_id') == d.id|string }}>{{ d.full_name }}</option>{% endfor %}
     </select>
-    {% if not drivers|selectattr('is_active')|list %}<small>No active driver. Add one under Delivery → Drivers.</small>{% endif %}
+    {% if not drivers|selectattr('is_active')|list %}<small>No active driver. Add one first.</small>{% endif %}
   </div>
   <div class="field span-1"><label for="vehicle_id">Vehicle<span class="req">*</span></label>
     <select id="vehicle_id" name="vehicle_id" required>
       <option value="">-- select --</option>
       {% for v in vehicles if v.is_active %}<option value="{{ v.id }}" {{ 'selected' if f.get('vehicle_id') == v.id|string }}>{{ v.plate_no }}{% if v.vehicle_type %} — {{ v.vehicle_type }}{% endif %}</option>{% endfor %}
     </select>
-    {% if not vehicles|selectattr('is_active')|list %}<small>No active vehicle. Add one under Delivery → Vehicles.</small>{% endif %}
+    {% if not vehicles|selectattr('is_active')|list %}<small>No active vehicle. Add one first.</small>{% endif %}
   </div>
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
 </div>
@@ -38,7 +38,7 @@
 </table></div>
 
 <div class="actions">
-  <button type="submit" name="action" value="save_assignment" class="btn primary">Save assignment</button>
+  <button type="submit" name="action" value="save_assignment" class="btn primary">Save</button>
   <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>
 </div>
 </form>

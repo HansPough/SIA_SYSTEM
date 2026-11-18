@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Sign and Release {{ ts.ts_no }}{% endblock %}
+{% block title %}Release transfer {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head no-print"><h1>Sign and Release TS</h1><span class="badge warn">Loaded</span></div>
-<p class="note no-print">Releasing takes the items out of warehouse stock (<strong>In transit</strong>).</p>
+<div class="page-head no-print"><h1>Release transfer</h1>{{ m.status('loaded') }}</div>
+<p class="note no-print">Items leave warehouse stock and become <strong>in transit</strong>.</p>
 {% include 'print/_document_body.html' %}
 <form method="post" class="card no-print">
 {% if driver_sig %}
@@ -14,13 +14,13 @@
 </div>
 {% else %}
 <div class="signing-box">
-  <p><strong>The driver has not signed yet.</strong> Ask the warehouse staff to
-    <a href="{{ url_for('delivery.transfer_driver_sign', ts_id=ts.id) }}">capture the driver's signature</a> first.</p>
-  <p class="muted">Only if that is not possible (no device, driver already left), write the reason and release anyway. It is kept on the document.</p>
+  <p><strong>No driver signature yet.</strong>
+    <a href="{{ url_for('delivery.transfer_driver_sign', ts_id=ts.id) }}">Capture it first</a>.</p>
+  <p class="muted">If that is impossible, write the reason and release anyway. It is kept on the document.</p>
   {{ m.field('Reason', 'paper_reason', 'text', value=paper_reason) }}
 </div>
 {% endif %}
-{{ m.signing_box('Pressing the button signs this transfer slip as released by you and releases the stock.') }}
+{{ m.signing_box('Signs this transfer as released by you and releases the stock.') }}
 <div class="actions">
   <button type="submit" name="action" value="release_items_in_transit_" class="btn primary">Sign &amp; release</button>
   <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>

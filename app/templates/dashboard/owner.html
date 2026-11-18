@@ -3,19 +3,19 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 {% if no_signature %}
-<div class="flash info">You have not saved your signature yet. <a href="{{ url_for('auth.signature') }}">Draw or upload it once</a> and it is stamped on every form you sign.</div>
+<div class="flash info">No signature saved yet. <a href="{{ url_for('auth.signature') }}">Add it once</a>.</div>
 {% endif %}
 <div class="page-head"><h1>Dashboard</h1><span class="badge">Owner</span></div>
 <div class="cards">
-  <a class="tile" href="{{ url_for('documents.to_sign') }}"><h3>Documents to sign</h3><p>Waiting for your signature: {{ to_sign }}</p></a>
-  <a class="tile" href="{{ url_for('purchasing.approval_list', decision='pending') }}"><h3>Approvals</h3><p>Waiting for your decision: {{ dash.pending_approvals if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('requisition.rf_list') }}"><h3>Requisition forms</h3><p>Open RFs: {{ dash.open_rfs if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('purchasing.ref_list') }}"><h3>Replenishment forms</h3><p>Open REFs: {{ dash.open_refs if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('purchasing.po_list') }}"><h3>Purchase orders</h3><p>Open POs: {{ dash.open_pos if dash else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('delivery.discrepancy_list') }}"><h3>Discrepancies</h3>{% set dc = discrepancy_counts() %}<p>Open: {{ dc.suppliers }} from suppliers, {{ dc.shops }} to shops</p></a>
-  <a class="tile" href="{{ url_for('inventory.stock_list', status='below') }}"><h3>Items below ROP</h3><p>{{ stats.below_rop if stats else 0 }} item(s) at or below ROP</p></a>
-  <a class="tile" href="{{ url_for('inventory.rop_list') }}"><h3>ROP settings</h3><p>Item locations with no ROP row: {{ stats.without_rop if stats else 0 }}</p></a>
-  <a class="tile" href="{{ url_for('inventory.adjustment_list') }}"><h3>Stock adjustments</h3><p>Pending: {{ stats.pending_adjustments if stats else 0 }} &middot; decided this week: {{ stats.recent_adjustments if stats else 0 }}</p></a>
+  <a class="tile" href="{{ url_for('documents.to_sign') }}"><h3>To sign</h3><p>{{ to_sign }} waiting</p></a>
+  <a class="tile" href="{{ url_for('purchasing.approval_list', decision='pending') }}"><h3>Approvals</h3><p>{{ dash.pending_approvals if dash else 0 }} waiting</p></a>
+  <a class="tile" href="{{ url_for('requisition.rf_list') }}"><h3>Requisitions</h3><p>{{ dash.open_rfs if dash else 0 }} open</p></a>
+  <a class="tile" href="{{ url_for('purchasing.ref_list') }}"><h3>Replenishments</h3><p>{{ dash.open_refs if dash else 0 }} open</p></a>
+  <a class="tile" href="{{ url_for('purchasing.po_list') }}"><h3>Purchase orders</h3><p>{{ dash.open_pos if dash else 0 }} open</p></a>
+  <a class="tile" href="{{ url_for('delivery.discrepancy_list') }}"><h3>Discrepancies</h3>{% set dc = discrepancy_counts() %}<p>{{ dc.suppliers }} supplier &middot; {{ dc.shops }} shop</p></a>
+  <a class="tile" href="{{ url_for('inventory.stock_list', status='below') }}"><h3>Below ROP</h3><p>{{ stats.below_rop if stats else 0 }} item(s)</p></a>
+  <a class="tile" href="{{ url_for('inventory.rop_list') }}"><h3>ROP settings</h3><p>{{ stats.without_rop if stats else 0 }} without ROP</p></a>
+  <a class="tile" href="{{ url_for('inventory.adjustment_list') }}"><h3>Adjustments</h3><p>{{ stats.pending_adjustments if stats else 0 }} pending &middot; {{ stats.recent_adjustments if stats else 0 }} this week</p></a>
   <a class="tile" href="{{ url_for('admin.user_list') }}"><h3>Users</h3><p>Manage accounts</p></a>
 </div>
 {% endblock %}

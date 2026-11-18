@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Receiving from Suppliers{% endblock %}
+{% block title %}Supplier receiving{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Receiving from Suppliers</h1></div>
+<div class="page-head"><h1>Supplier receiving</h1></div>
 <div class="card">
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search PO no. or supplier...">
@@ -17,12 +17,12 @@
 <tbody>
 {% for r in res.rows %}
 <tr><td class="nowrap">{{ r.po_no }}</td><td>{{ r.supplier_name }}</td>
-<td>{{ (r.expected_date|string)[:10] if r.expected_date else '–' }}</td>
+<td class="nowrap">{{ (r.expected_date|string)[:10] if r.expected_date else '–' }}</td>
 <td class="num">{{ r.n_items }}</td><td class="num">{{ r.qty_received }} / {{ r.qty_ordered }}</td>
-<td><span class="badge {{ 'warn' if r.status == 'partially_received' }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td>{{ m.status(r.status) }}</td>
 <td><a class="btn small primary" href="{{ url_for('delivery.receiving_check', po_id=r.id) }}">Receive</a></td></tr>
 {% else %}
-<tr><td colspan="7" class="muted">No purchase orders are waiting for goods. A PO must be marked as sent in Purchasing first.</td></tr>
+<tr><td colspan="7" class="muted">No waiting orders. Send the PO first.</td></tr>
 {% endfor %}
 </tbody>
 </table></div>

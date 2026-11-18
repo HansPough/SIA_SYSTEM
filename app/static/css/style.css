@@ -28,7 +28,7 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 14px rgba(16, 24, 40, .05);
   --topbar-h: 64px;
   --sidebar-w: 264px;
-  --content-w: 1180px;
+  --content-w: 1500px;
 }
 
 * { box-sizing: border-box; }
@@ -150,11 +150,22 @@ details.card[open] > summary { margin-bottom: 14px; }
 a.tile:hover { border-color: var(--brand); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(16, 24, 40, .1); }
 .tile h3 { margin: 0 0 6px; font-size: 15px; }
 .tile p { margin: 0; color: var(--muted); font-size: 13px; }
-.badge { display: inline-flex; align-items: center; background: #e9ecef; color: #333a42; border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; gap: 6px; background: #e9ecef; color: #333a42; border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.ok { background: var(--ok-bg); color: var(--ok); }
 .badge.danger { background: var(--danger-bg); color: var(--danger); }
 .badge.snooze { background: #e8e9ff; color: #3b3fa8; }
+/* One status system for the whole app (see app/statuses.py). A dot repeats the
+   meaning so the badge still reads correctly on a black-and-white print. */
+.badge.s-ok, .badge.s-warn, .badge.s-danger, .badge.s-info, .badge.s-neutral { padding-left: 9px; }
+.badge.s-ok::before, .badge.s-warn::before, .badge.s-danger::before, .badge.s-info::before, .badge.s-neutral::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 6px;
+}
+.badge.s-ok { background: var(--ok-bg); color: #0f5c2e; }
+.badge.s-warn { background: var(--warn-bg); color: #7a4700; }
+.badge.s-danger { background: var(--danger-bg); color: #971b12; }
+.badge.s-info { background: var(--info-bg); color: #1e3a8a; }
+.badge.s-neutral { background: #eef0f3; color: #4b525b; }
 
 /* ---------- buttons (everything clickable that does something is a button) ---------- */
 .btn {
@@ -180,9 +191,12 @@ a.tile:hover { border-color: var(--brand); transform: translateY(-2px); box-shad
 /* On a document page the action bar (Sign, Release, PDF...) stays in view while the document scrolls.
    Buttons inside a data-entry form stay in the normal flow so they never hide an input. */
 .content > .actions {
-  position: sticky; bottom: 0; z-index: 5; padding: 14px 0; margin-top: 18px;
-  background: linear-gradient(to top, var(--bg) 70%, rgba(243, 244, 246, 0));
+  position: sticky; bottom: 0; z-index: 5; padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); margin-top: 18px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
 }
+/* Never let the bottom bar sit on top of the last row of a table. */
+.content { scroll-padding-bottom: 96px; }
 .actions form { margin: 0; display: inline-flex; }
 .actions .spacer { flex: 1; }
 
@@ -220,11 +234,22 @@ table.data a:not(.btn) { font-weight: 600; }
 /* a column of checkboxes: centered under its header, no text beside the box */
 table.data th.check-cell, table.data td.check-cell { text-align: center; width: 1%; white-space: nowrap; padding-left: 16px; padding-right: 16px; }
 table.data td.check-cell input[type=checkbox] { width: 20px; height: 20px; margin: 0; vertical-align: middle; cursor: pointer; }
+/* The th rule above is more specific, so name both cells explicitly. */
+table.data th.num, table.data td.num,
 td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.nowrap, td:has(> .badge), td:has(> .btn), td:has(> form) { white-space: nowrap; }
 td.row-actions, th.row-actions, td:has(> .btn:only-child) { text-align: right; width: 1%; }
 td.row-actions { display: table-cell; }
 table.data td .btn + .btn, table.data td form + .btn, table.data td .btn + form { margin-left: 6px; }
+/* The action column (Open / Edit / Receive) stays pinned while a wide table scrolls
+   sideways, so a button is never off-screen on a phone or a small laptop. */
+table.data tbody tr > td:last-child:has(> .btn),
+table.data tbody tr > td:last-child.row-actions {
+  position: sticky; right: 0; z-index: 1; background: #fff;
+}
+table.data tbody tr:hover > td:last-child:has(> .btn),
+table.data tbody tr:hover > td:last-child.row-actions { background: #fafbfc; }
+table.data tbody tr:last-child > td:last-child:has(> .btn) { border-bottom: 0; }
 table.lines td input, table.lines td select { padding: 6px 9px; min-height: 34px; }
 tr.sample td { color: #9aa5b1; }
 .empty-row td, td.muted[colspan] { text-align: center; padding: 28px 14px; color: var(--muted); }
@@ -232,16 +257,51 @@ tr.sample td { color: #9aa5b1; }
 /* ---------- filters / notes / info ---------- */
 .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
 .filters input[type=search], .filters input[type=text] { max-width: 280px; }
+/* Search + Add for the big item lists (stock count, adjustments): only the rows the user needs. */
+.item-add { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin: 18px 0 12px; }
+.item-add .muted { color: var(--warn); font-weight: 600; padding-top: 10px; }
+.picker { position: relative; flex: 1 1 320px; max-width: 440px; }
+.picker input[type=search] { width: 100%; }
+.picker-results { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); background: #fff;
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 24px rgba(16, 24, 40, .16);
+  max-height: 280px; overflow: auto; padding: 4px; }
+.picker-item { display: flex; gap: 10px; align-items: baseline; width: 100%; border: 0; background: none;
+  padding: 8px 9px; border-radius: 6px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
+.picker-item:hover, .picker-item:focus-visible { background: #f1f2f4; }
+.picker-code { flex: 0 0 auto; font-weight: 700; font-size: 12px; color: var(--muted); }
+.picker-none { padding: 10px; color: var(--muted); font-size: 13px; }
+[hidden] { display: none !important; }
 .filters select { width: auto; min-width: 150px; }
 dl.info { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 24px; margin: 0; }
 dl.info dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .btn + .note, .actions + .note { margin-top: 14px; }
 .note { color: #3b434c; background: #fff9e9; border: 1px solid #efdba8; border-left: 4px solid #e0a800; padding: 11px 15px; border-radius: var(--radius-sm); margin: 0 0 16px; }
-.flash { padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 14px; background: #f0f1f3; border: 1px solid #d6d9de; }
-.flash.error { background: var(--danger-bg); border-color: #f1b9b3; color: #8a1c14; }
-.flash.success { background: var(--ok-bg); border-color: #b4dbc1; color: #1e5b32; }
-.flash.info { background: var(--info-bg); border-color: #c6d8f6; color: #1e3a8a; }
+.flash { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 14px;
+  background: #f0f1f3; border: 1px solid #d6d9de; border-left: 4px solid #9aa1ab; }
+.flash.error { background: var(--danger-bg); border-color: #f1b9b3; border-left-color: var(--danger); color: #8a1c14; }
+.flash.success { background: var(--ok-bg); border-color: #b4dbc1; border-left-color: var(--ok); color: #1e5b32; }
+.flash.info { background: var(--info-bg); border-color: #c6d8f6; border-left-color: #2f5fd0; color: #1e3a8a; }
+.flash-close { margin-left: auto; border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1;
+  cursor: pointer; padding: 0 2px; opacity: .65; }
+.flash-close:hover { opacity: 1; }
+.flash.leaving { opacity: 0; transform: translateY(-4px); transition: opacity .18s, transform .18s; }
+
+/* ---------- live toasts: short messages for changes made by other users ---------- */
+.toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 90; display: grid; gap: 8px;
+  width: min(92vw, 380px); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border-radius: 10px;
+  background: #1b1f24; color: #fff; font-size: 13px; line-height: 1.35; box-shadow: 0 10px 28px rgba(16, 24, 40, .28);
+  animation: toast-in .18s ease-out; }
+.toast.ok { background: #14532d; }
+.toast.warn { background: #7a4700; }
+.toast.danger { background: #971b12; }
+.toast .toast-x { margin-left: auto; border: 0; background: transparent; color: #fff; font-size: 16px; line-height: 1;
+  cursor: pointer; opacity: .75; }
+.toast .toast-x:hover { opacity: 1; }
+.toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity .18s, transform .18s; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
 .pager { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 14px; color: var(--muted); }
 
 /* ---------- login ---------- */
@@ -260,7 +320,8 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 @media print {
   @page { size: A4; margin: 14mm; }
   body { background: #fff; font-size: 11pt; color: #000; }
-  .topbar, .sidebar, .nav-toggle, .skip-link, .actions, .flash, .pager, .no-print, .filters, .page-head, .page-sub { display: none !important; }
+  .topbar, .sidebar, .nav-toggle, .skip-link, .actions, .flash, .pager, .no-print, .filters, .page-head, .page-sub,
+  .toast-stack { display: none !important; }
   .shell { display: block; }
   .content { max-width: none; padding: 0; }
   .card { border: 0; box-shadow: none; padding: 0; margin: 0 0 12pt; }
@@ -270,6 +331,35 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
   .sign-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150pt, 1fr)); gap: 18pt; margin-top: 22pt; }
   .sign-box { border-top: 1px solid #000; padding-top: 4pt; font-size: 9pt; }
   .signature-img { max-height: 34pt; display: block; margin-bottom: 2pt; }
+}
+
+/* ---------- document + side panel (progress, details) ---------- */
+/* The document comes first; progress, lifecycle and details sit under it. */
+.doc-split { display: block; }
+.doc-main { min-width: 0; }
+.doc-side { margin-top: 16px; display: grid; gap: 14px; }
+.doc-side .card { margin-bottom: 0; }
+.doc-side table.data { font-size: 13px; }
+.side-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.side-item { border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; }
+.side-item strong { display: block; font-size: 13px; line-height: 1.3; }
+.side-item small { margin-top: 1px; }
+.mini { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: 7px 0 0; }
+.mini dt { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.mini dd { margin: 0; font-weight: 600; font-size: 12.5px; }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft); font-size: 12.5px; align-items: baseline; }
+.timeline li:last-child { border-bottom: 0; }
+.timeline .when { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.timeline .who { color: var(--muted); text-align: right; }
+@media (max-width: 620px) {
+  .timeline li { grid-template-columns: 1fr auto; }
+  .timeline .who { grid-column: 1 / -1; text-align: left; }
+}
+.doc-side details.card > summary { font-size: 13px; }
+@media print {
+  .doc-side { display: none !important; }
 }
 
 /* ---------- printable document (also the first thing on every form page) ---------- */
@@ -357,7 +447,24 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
   .grid { grid-template-columns: 1fr; }
   .field.span-2 { grid-column: span 1; }
   .doc-parties { grid-template-columns: 1fr; }
-  .topbar { padding: 0 14px; }
+  .topbar { padding: 0 14px; gap: 10px; }
+  .brand { min-width: 0; }
+  .brand-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .topbar-right { flex: 0 0 auto; gap: 6px; }
+}
+@media (max-width: 560px) {
+  .topbar { padding: 0 10px; gap: 8px; height: 56px; }
+  :root { --topbar-h: 56px; }
+  .brand-logo { width: 34px; height: 34px; }
+  .brand-name { font-size: 11px; letter-spacing: .04em; }
+  .brand-name small { display: none; }
+  .menu-btn { height: 36px; padding: 0 9px; }
+  .bell-btn { width: 36px; }
+  .content { padding: 16px 12px 36px; }
+  .page-head h1 { font-size: 21px; }
+  .actions { gap: 8px; }
+  .actions .btn { flex: 1 1 auto; justify-content: center; }
+  .toast-stack { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 /* ---------- tabs (two related screens under one menu item) ---------- */

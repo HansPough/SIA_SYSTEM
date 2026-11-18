@@ -2,15 +2,15 @@
 {% import '_macros.html' as m %}
 {% block title %}New RFQ {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ 'Ask More Suppliers' if data.round > 1 else 'New RFQ' }}</h1><span class="badge warn">Will be sent</span></div>
+<div class="page-head"><h1>{{ 'Ask more suppliers' if data.round > 1 else 'New RFQ' }}</h1>{{ m.status('submitted', label='Will be sent') }}</div>
 {% if data.round > 1 %}
-<p class="note">Items still without a supplier ({{ data.existing.rfq_no }} was sent). No email is sent: send it yourself.</p>
+<p class="note">Items still without a supplier. No email is sent — send it yourself.</p>
 {% else %}
-<p class="note">Pre-filled from {{ data.ref.ref_no }}. No email is sent: send the RFQ yourself.</p>
+<p class="note">Filled from {{ data.ref.ref_no }}. No email is sent — send it yourself.</p>
 {% endif %}
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('RFQ no.', 'rfq_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('RFQ no.', 'rfq_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('REF no.', 'ref_no', 'text', value=data.ref.ref_no, readonly=True) }}
   {{ m.field('Warehouse', 'warehouse', 'text', value=data.warehouse, readonly=True) }}
   {{ m.field('Reply deadline', 'reply_deadline', 'date', value=f.get('reply_deadline', '')) }}

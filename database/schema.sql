@@ -263,6 +263,7 @@ CREATE TABLE stock_adjustments (
     reason         VARCHAR(20) NOT NULL
                    CHECK (reason IN ('count_difference', 'damaged', 'lost', 'delivery_variance', 'other')),
     status         VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    auto_approved  BOOLEAN NOT NULL DEFAULT FALSE,                   -- a manager's own entry, applied on save
     source_ar_id   INTEGER,                                          -- FK added at the end (AR table is created later)
     remarks        TEXT,
     requested_by   INTEGER NOT NULL REFERENCES users(id),
@@ -270,8 +271,9 @@ CREATE TABLE stock_adjustments (
     review_remarks TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     reviewed_at    TIMESTAMPTZ,
-    CHECK (status = 'pending' OR reviewed_by IS NOT NULL),
-    CHECK (reviewed_by IS NULL OR reviewed_by <> requested_by)       -- nobody approves their own adjustment
+    CHECK (status = 'pending' OR auto_approved OR reviewed_by IS NOT NULL),
+    -- staff entries are reviewed by someone else; a manager's own entry is auto-approved
+    CHECK (reviewed_by IS NULL OR auto_approved OR reviewed_by <> requested_by)
 );
 
 CREATE TABLE stock_adjustment_items (

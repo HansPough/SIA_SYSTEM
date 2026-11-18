@@ -19,8 +19,8 @@
 <tr><td class="nowrap">{{ r.ref_no }}</td><td>{{ r.supplier_name }}</td>
 <td>{{ 'Quotation' if r.basis == 'quotation' else 'Agreed price' }}</td>
 <td class="num">{% if r.total is not none %}{{ r.total|money }}{% else %}–{% endif %}</td>
-<td>{{ (r.submitted_at|string)[:10] }}</td>
-<td><span class="badge {{ 'warn' if r.decision == 'pending' }}">{{ r.decision|capitalize }}</span></td>
+<td class="nowrap">{{ (r.submitted_at|string)[:10] }}</td>
+<td>{{ m.status(r.decision) }}</td>
 <td>{% if current_role == 'owner' %}<a class="btn small" href="{{ url_for('purchasing.approval_detail', approval_id=r.id) }}">Open</a>{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="7" class="muted">No approvals yet.</td></tr>

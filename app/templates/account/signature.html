@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}My Signature{% endblock %}
+{% block title %}My signature{% endblock %}
 {% block content %}
-<div class="page-head"><h1>My Signature</h1><span class="badge">{{ user.full_name }}</span></div>
-<p class="note">Draw it once. It is stamped with your name whenever you sign.</p>
+<div class="page-head"><h1>My signature</h1><span class="badge">{{ user.full_name }}</span></div>
+<p class="note">Draw it once. It is added whenever you sign.</p>
 
 {% if user.signature_data %}
 <div class="card">
@@ -19,8 +19,8 @@
   <h2 style="margin-top:0">{{ 'Draw a new signature' if user.signature_data else 'Draw your signature' }}</h2>
   <canvas id="sig-pad" class="sig-pad" width="1280" height="480" aria-label="Signature drawing area"></canvas>
   <div class="sig-tools">
-    <button type="button" id="sig-clear" class="btn small">Clear drawing</button>
-    <span class="muted">Use a smooth line. A PNG is saved with a transparent background.</span>
+    <button type="button" id="sig-clear" class="btn small">Clear</button>
+    <span class="muted">A smooth line works best.</span>
   </div>
   <form method="post" id="sig-form">
     <input type="hidden" name="action" value="save">
@@ -31,7 +31,7 @@
 
 <div class="card">
   <h2 style="margin-top:0">Or upload a picture</h2>
-  <p class="muted">Sign on white paper, take a photo or scan, and upload it (PNG or JPG, up to 2 MB). The white background is removed for you.</p>
+  <p class="muted">Photo or scan on white paper (PNG or JPG, up to 2 MB). Background removed.</p>
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="action" value="save">
     <input type="file" name="signature_file" accept="image/png,image/jpeg" required>

@@ -2,7 +2,7 @@
 {% import '_macros.html' as m %}
 {% block title %}Sale / Stock Issue{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Sale / Stock Issue</h1><span class="badge {{ 'warn' if issue.status != 'posted' }}">{{ issue.status|replace('_', ' ')|capitalize }}</span></div>
+<div class="page-head"><h1>Sale</h1>{{ m.status(issue.status) }}</div>
 <div class="card">
 <h2>Details</h2>
 <dl class="info">

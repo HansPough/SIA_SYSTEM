@@ -2,6 +2,10 @@
 
 Structure for the four modules: **Requisition, Inventory, Purchasing, Delivery**.
 Status: all four modules work. **Inventory** (stock, ROP with suggestions, stock-count sheets, sales / issues and void requests, adjustments, items, brands and patterns, alerts, RF queue, reports), **Requisition** (low-stock alerts for the shop manager, RFs sent to the warehouse), **Purchasing** (restock alerts, REF, RFQ, quotations, owner approval, PO edit/cancel, suppliers and agreed prices) and **Delivery** (transfer slips, loading/release, shop AR, supplier receiving memo, discrepancy reports, shop variances, drivers, vehicles). Users and locations are managed in the app, login is real, and RF/REF/PO/TS/AR/RM/DR have printable, e-signable document views; each user can save a drawn signature under **My signature** and it is used automatically when they sign.
+The interface keeps itself current: the bell and sidebar badges update by themselves, list and detail
+screens refresh when another user saves, and every status word has one colour (green = done, amber =
+waiting, red = stopped, blue = in progress, grey = draft). See `docs/UI_FLOWS_LIVE_AND_STATUS.md`.
+
 See `docs/MODULE1_REQUISITION.md`, `docs/MODULE3_PURCHASING.md`, `docs/MODULE4_DELIVERY.md`, `docs/STOCK_CORE_FOR_OTHER_MODULES.md` and `docs/ADMIN_AND_DOCUMENTS.md`.
 
 ## Run it (Windows PowerShell)
@@ -59,6 +63,7 @@ and stores the signer and timestamp.
 | Demo locations (WH, SHOP) and 5 demo users | `database/seed_users.sql` |
 | Stock, ROP, max, lead time, racks — **made-up demo numbers** | `database/seed_demo_stock.sql` — never in a real database |
 | Alert rows for that demo stock | `python scripts/seed_alerts.py` (alerts normally appear only when stock moves) |
+| **Complete stock for every item** (ROP, max, lead time, rack, warehouse and shop stock, opening ledger, low-stock examples) | `python scripts/seed_complete_demo.py --yes` — resets working data, keeps users/items/suppliers; **demo database only** |
 | **Test scenarios that trigger every situation** (alerts, RF/TS in every state, REF/PO, approvals, discrepancies, voids...) | `python scripts/seed_scenarios.py --reset --yes` — **demo database only**, see `docs/TEST_SCENARIOS.md` |
 | Demo suppliers and agreed prices for every item — **made-up numbers** | `python scripts/seed_demo_suppliers.py` — never in a real database |
 | Agreed prices for the suppliers already in the database — **made-up numbers** | `python scripts/seed_supplier_prices.py` — never in a real database |
@@ -114,7 +119,12 @@ It is safe to run again.
 | `scripts/seed_demo_suppliers.py` | create demo suppliers and an agreed price for every item (demo only) |
 | `tests/` | `python -m unittest discover tests -v` (runs on SQLite, no PostgreSQL needed) |
 | `app/roles.py` | roles, the sidebar menu per role, `roles_required` |
-| `app/blueprints/` | `requisition.py`, `inventory.py`, `purchasing.py`, `auth.py`, `dashboard.py`. `delivery/` and `admin/` are folders with one file per owner (`transfers.py`, `shop_receiving.py`, `supplier_receiving.py`, `people.py`, `items.py`) so team members do not edit the same file |
+| `app/statuses.py` | the one place a status word gets its colour (ok, warn, danger, info, neutral) |
+| `scripts/seed_complete_demo.py` | complete stock for every active item at both locations (demo) |
+| `app/live.py` | revision and sidebar/bell data used by `/api/live`; which screens may refresh themselves |
+| `app/blueprints/live.py` | `GET /api/live`, the small JSON the browser polls for live updates |
+| `app/static/js/live.js` | updates the bell/sidebar, refreshes a screen another user changed, and shows toasts |
+| `app/blueprints/` | `requisition.py`, `inventory.py`, `purchasing.py`, `auth.py`, `dashboard.py`, `live.py`. `delivery/` and `admin/` are folders with one file per owner (`transfers.py`, `shop_receiving.py`, `supplier_receiving.py`, `people.py`, `items.py`) so team members do not edit the same file |
 | `app/templates/<module>/` | one HTML file per screen (lists, forms, details) |
 | `app/templates/dashboard/` | one dashboard per role |
 | `app/static/` | `css/style.css`, `js/app.js` (add/remove rows in item tables) |
@@ -147,4 +157,4 @@ Items are classified only by their specs. There is no vehicle type.
 
 ## Tests
 
-`python -m unittest discover tests -v` (152 tests, run on SQLite, no PostgreSQL needed).
+`python -m unittest discover tests -v` (326 tests, run on SQLite, no PostgreSQL needed).

@@ -12,7 +12,7 @@
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Adj. no.</th><th>Date</th><th>Location</th><th>Reason</th><th class="num">Items</th><th>Status</th><th></th></tr></thead>
 <tbody>
-{% for r in res.rows %}<tr><td class="nowrap">{{ r.adj_no }}</td><td>{{ (r.created_at|string)[:10] }}</td><td>{{ r.location }}</td><td>{{ r.reason|replace('_', ' ')|capitalize }}</td><td class="num">{{ r.n_items }}</td><td><span class="badge {{ 'warn' if r.status == 'pending' }}">{{ r.status|capitalize }}</span></td><td><a class="btn small" href="{{ url_for('inventory.adjustment_detail', adj_id=r.id) }}">Open</a></td></tr>
+{% for r in res.rows %}<tr><td class="nowrap">{{ r.adj_no }}</td><td class="nowrap">{{ (r.created_at|string)[:10] }}</td><td>{{ r.location }}</td><td>{{ r.reason|replace('_', ' ')|capitalize }}</td><td class="num">{{ r.n_items }}</td><td>{{ m.status(r.status) }}</td><td><a class="btn small" href="{{ url_for('inventory.adjustment_detail', adj_id=r.id) }}">Open</a></td></tr>
 {% else %}<tr><td colspan="7" class="muted">No adjustments yet.</td></tr>{% endfor %}
 </tbody>
 </table></div>

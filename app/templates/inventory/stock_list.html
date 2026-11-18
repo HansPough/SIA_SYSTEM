@@ -2,7 +2,12 @@
 {% import '_macros.html' as m %}
 {% block title %}Stock{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Stock</h1></div>
+<div class="page-head"><h1>Stock</h1>
+  <a class="btn" href="{{ url_for('inventory.count_sheet') }}">Stock count</a>
+  {% if current_role in ['shop_manager', 'shop_staff', 'warehouse_manager', 'warehouse_staff'] %}
+  <a class="btn primary" href="{{ url_for('inventory.adjustment_new') }}">Adjust stock</a>
+  {% endif %}
+</div>
 <div class="card">
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search item or code...">
@@ -15,7 +20,7 @@
 <thead><tr><th>Item</th><th>Location</th><th>Rack</th><th class="num">On hand</th><th class="num">Reserved</th><th class="num">Available</th><th class="num">ROP</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {% for r in res.rows %}
-<tr><td>{{ r.item_name }}<small>{{ r.item_code }}</small></td><td>{{ r.location }}</td><td>{{ r.rack or '–' }}</td><td class="num">{{ r.on_hand }}</td><td class="num">{{ r.reserved }}</td><td class="num">{{ r.available }}</td><td class="num">{{ r.rop if r.rop is not none else '–' }}</td><td><span class="badge {{ 'warn' if r.status != 'OK' }}">{{ r.status }}</span></td><td><a class="btn small" href="{{ url_for('inventory.stock_detail', item_id=r.item_id) }}">Open</a></td></tr>
+<tr><td>{{ r.item_name }}<small>{{ r.item_code }}</small></td><td>{{ r.location }}</td><td>{{ r.rack or '–' }}</td><td class="num">{{ r.on_hand }}</td><td class="num">{{ r.reserved }}</td><td class="num">{{ r.available }}</td><td class="num">{{ r.rop if r.rop is not none else '–' }}</td><td>{{ m.status(r.status) }}</td><td><a class="btn small" href="{{ url_for('inventory.stock_detail', item_id=r.item_id) }}">Open</a></td></tr>
 {% else %}<tr><td colspan="9" class="muted">No stock found.</td></tr>{% endfor %}
 </tbody>
 </table></div>

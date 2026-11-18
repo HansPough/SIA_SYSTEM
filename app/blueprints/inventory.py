@@ -103,15 +103,19 @@ def count_sheet():
             flash("No differences were entered, so no adjustment was created.", "info")
             return redirect(url_for("inventory.count_sheet", location=loc_id))
         try:
+            auto = user["role"] in ops.MANAGER_ROLES
             adj_id, adj_no = ops.create_adjustment(
                 user["id"], loc_id, "count difference", None,
-                request.form.get("remarks"), triples)
+                request.form.get("remarks"), triples, auto_approve=auto)
             inv.commit()
         except InventoryError as e:
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s created with %d line(s) for approval." % (adj_no, len(triples)), "success")
+            if auto:
+                flash("%s saved. Stock updated for %d item(s)." % (adj_no, len(triples)), "success")
+            else:
+                flash("%s saved. Waiting for approval." % adj_no, "success")
             return redirect(url_for("inventory.adjustment_detail", adj_id=adj_id))
     return render_template("inventory/count_sheet.html", items=items, locations=locations,
                            loc_id=loc_id, f=request.form)
@@ -147,13 +151,14 @@ def issue_new():
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("Saved %s. Stock was deducted." % issue_no, "success")
+            flash("Saved %s. Stock deducted." % issue_no, "success")
             if low:
-                # TODO (Module 1): create / refresh the low-stock alert for the shop manager here.
+                # create_issue() already refreshed the low-stock alert; this only tells the user which items moved.
                 flash("Now at or below ROP: " + ", ".join(r["item_name"] for r in low), "info")
             return redirect(url_for("inventory.issue_detail", issue_id=_id))
     return render_template("inventory/issue_new.html", items=ops.items_for_select(loc_id),
-                           location=ops.get_location(loc_id), f=request.form)
+                           location=ops.get_location(loc_id), f=request.form,
+                           next_no=inv.peek_doc_no("ISS"))
 
 
 @bp.route("/issues/<int:issue_id>")
@@ -178,7 +183,7 @@ def issue_void_request(issue_id):
         inv.rollback()
         flash(str(e), "error")
     else:
-        flash("Void requested for %s. The stock goes back when your manager confirms it." % issue_no, "success")
+        flash("Void requested for %s. Waiting for your manager." % issue_no, "success")
     return redirect(url_for("inventory.issue_detail", issue_id=issue_id))
 
 
@@ -193,8 +198,8 @@ def issue_void_review(issue_id):
         inv.rollback()
         flash(str(e), "error")
     else:
-        flash("%s was voided and the stock was put back." % issue_no if result == "voided"
-              else "Void request for %s was rejected. The sale stays." % issue_no, "success")
+        flash("%s voided. Stock put back." % issue_no if result == "voided"
+              else "Void request for %s rejected." % issue_no, "success")
     return redirect(url_for("inventory.issue_detail", issue_id=issue_id))
 
 
@@ -266,11 +271,11 @@ def rfqueue_review(rf_id):
         else:
             msg = "Reserved %d unit(s) for %s." % (units, rf["rf_no"])
             if short:
-                msg += " %d item(s) are still short and were added to the restock alert." % short
+                msg += " %d item(s) short, added to the restock alert." % short
             flash(msg, "success")
             updated = ops.get_rf(rf_id, user["location_id"])
             if updated["active_transfer"]:
-                flash("A transfer is already in progress for this requisition.", "info")
+                flash("A transfer is already open for this requisition.", "info")
                 return redirect(url_for("delivery.transfer_detail", ts_id=updated["active_transfer"]["id"]))
             if updated["has_reserved"]:
                 return redirect(url_for("delivery.transfer_new", rf_id=rf_id))
@@ -312,18 +317,22 @@ def adjustment_new():
         return redirect(url_for("inventory.adjustment_list"))
     if request.method == "POST":
         try:
+            auto = user["role"] in ops.MANAGER_ROLES
             adj_id, adj_no = ops.create_adjustment(
                 user["id"], loc_id, request.form.get("reason"), request.form.get("ar_no"),
-                request.form.get("remarks"), _lines("item_id[]", "qty_actual[]", "item_remarks[]"))
+                request.form.get("remarks"), _lines("item_id[]", "qty_actual[]", "item_remarks[]"),
+                auto_approve=auto)
             inv.commit()
         except InventoryError as e:
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("Saved %s. It waits for your manager's approval before the stock changes." % adj_no, "success")
+            flash(("Saved %s. Stock updated." if auto else "Saved %s. Waiting for approval.") % adj_no,
+                  "success")
             return redirect(url_for("inventory.adjustment_detail", adj_id=adj_id))
     return render_template("inventory/adjustment_new.html", items=ops.items_for_select(loc_id),
-                           location=ops.get_location(loc_id), f=request.form)
+                           location=ops.get_location(loc_id), f=request.form,
+                           next_no=inv.peek_doc_no("ADJ"))
 
 
 @bp.route("/adjustments/<int:adj_id>")

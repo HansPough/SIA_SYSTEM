@@ -2,7 +2,7 @@
 {% import '_macros.html' as m %}
 {% block title %}Low-stock Alert {{ alert.alert_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Low-stock Alert {{ alert.alert_no }}</h1>
+<div class="page-head"><h1>Low-stock alert {{ alert.alert_no }}</h1>
   {{ m.alert_badge(alert) }}
 </div>
 <div class="card">
@@ -35,7 +35,7 @@
 <tbody>
 {% for r in alert.rfs %}
 <tr><td class="nowrap">{{ r.rf_no }}</td><td>{{ (r.created_at|string)[:10] }}</td>
-<td>{{ r.status|replace('_', ' ')|capitalize }}</td>
+<td>{{ m.status(r.status) }}</td>
 <td><a class="btn small" href="{{ url_for('requisition.rf_detail', rf_id=r.id) }}">Open</a></td></tr>
 {% endfor %}
 </tbody>
@@ -44,7 +44,11 @@
 
 <div class="actions">
   {% if alert.status == 'active' %}
-  <a class="btn primary" href="{{ url_for('requisition.rf_new', alert_id=alert.id) }}">Create RF from this alert</a>
+  {% if existing_rf %}
+  <a class="btn primary" href="{{ url_for('requisition.rf_detail', rf_id=existing_rf.id) }}">Open {{ existing_rf.rf_no }}</a>
+  {% else %}
+  <a class="btn primary" href="{{ url_for('requisition.rf_new', alert_id=alert.id) }}">Create RF</a>
+  {% endif %}
   <span class="spacer"></span>
   {% if alert.is_snoozed %}
   <span class="snooze-note">Silent until {{ (alert.snoozed_until|string)[:10] }}. It stays open.</span>

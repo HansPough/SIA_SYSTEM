@@ -39,7 +39,7 @@ def delivery_receive(ts_id):
     user = current_user()
     ts = dop.receive_form(ts_id, user)
     if ts is None:
-        flash("That transfer slip is not in transit to your shop.", "error")
+        flash("That transfer is not in transit to your shop.", "error")
         return redirect(url_for("delivery.delivery_list"))
     if request.method == "POST":
         try:
@@ -61,15 +61,15 @@ def delivery_receive(ts_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            msg = "%s signed. The accepted quantity was added to shop stock." % ar_no
+            msg = "%s signed. Accepted units added to shop stock." % ar_no
             if has_variance:
-                msg += (" The rejected/short units were returned to warehouse stock and the RF line "
-                        "was reopened so they can be sent again.")
+                msg += " Rejected units went back to the warehouse; the line is open again."
             if resolved:
-                msg += " %d shop variance(s) resolved automatically." % resolved
+                msg += " %d variance(s) resolved." % resolved
             flash(msg, "success")
-            return redirect(url_for("delivery.delivery_list"))
+            return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     sigs = signing.signatures_for("TS", ts_id)
     return render_template("delivery/delivery_receive.html", ts=ts, f=request.form,
                            released_sig=sigs.get("released_by"), driver_sig=docs.driver_signature(ts),
-                           counted_ids=request.form.getlist("counted[]"))
+                           counted_ids=request.form.getlist("counted[]"),
+                           next_no=inv.peek_doc_no("AR"))

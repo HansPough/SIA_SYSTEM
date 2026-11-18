@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Low-stock Alerts{% endblock %}
+{% block title %}Low-stock alerts{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Low-stock Alerts</h1>
-  <a class="btn ghost" href="{{ url_for('requisition.rf_list') }}">Requisition forms</a>
+<div class="page-head"><h1>Low-stock alerts</h1>
+  <a class="btn ghost" href="{{ url_for('requisition.rf_list') }}">Requisitions</a>
 </div>
 <div class="card">
 <form method="get" class="filters">
@@ -18,7 +18,7 @@
 <thead><tr><th>Alert</th><th>Created</th><th class="num">Items at / below ROP</th><th class="num">Suggested units</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {% for r in res.rows %}
-<tr><td class="nowrap">{{ r.alert_no }}</td><td>{{ (r.created_at|string)[:10] }}</td>
+<tr><td class="nowrap">{{ r.alert_no }}</td><td class="nowrap">{{ (r.created_at|string)[:10] }}</td>
 <td class="num">{{ r.n_items }}</td><td class="num">{{ r.total_suggested }}</td>
 <td>{{ m.alert_badge(r) }}</td>
 <td class="row-actions"><a class="btn small primary" href="{{ url_for('requisition.alert_detail', alert_id=r.id) }}">Open</a>

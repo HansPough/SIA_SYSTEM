@@ -1,45 +1,43 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Discrepancy Report {{ report.report_no }}{% endblock %}
+{% block title %}Discrepancy {{ report.report_no }}{% endblock %}
 {% block content %}
+<div class="doc-split">
+<div class="doc-main">
 {% set d = load_document('DR', report.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
-<details class="card no-print"><summary>Progress and details</summary>
+</div>
+<aside class="doc-side">
+<details class="card no-print" open><summary>Progress and details</summary>
 <dl class="info">
   <div><dt>RM no.</dt><dd><a href="{{ url_for('delivery.receiving_detail', rm_id=report.rm_id) }}">{{ report.rm_no }}</a></dd></div>
   <div><dt>PO no.</dt><dd>{{ report.po_no }}</dd></div>
   <div><dt>Supplier</dt><dd>{{ report.supplier_name }}</dd></div>
-  <div><dt>Status</dt><dd>{{ report.status|replace('_', ' ')|capitalize }}</dd></div>
+  <div><dt>Status</dt><dd>{{ m.status(report.status) }}</dd></div>
   {% if report.resolved_at %}<div><dt>Resolved</dt><dd>{{ (report.resolved_at|string)[:16] }}</dd></div>{% endif %}
 </dl>
 
-<h2>Items</h2>
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">Short qty</th><th class="num">Rejected qty</th><th class="num">Received later</th><th class="num">Still outstanding</th><th>Reason</th></tr></thead>
-<tbody>
-{% for l in report.lines %}
-<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
-<td class="num">{{ l.qty_short }}</td><td class="num">{{ l.qty_rejected }}</td>
-<td class="num">{{ l.qty_replaced }}</td><td class="num">{{ l.qty_outstanding }}</td>
-<td>{{ l.reason or '–' }}</td></tr>
-{% else %}
-<tr><td colspan="6" class="muted">No items on this report.</td></tr>
-{% endfor %}
-</tbody>
-</table></div>
+<h2>Lifecycle</h2>
+<ul class="timeline">
+  {% for e in load_lifecycle('DR', report.id) %}
+  <li><span class="when">{{ e.when }}</span><span class="what">{{ e.what }}</span><span class="who">{{ e.who }}</span></li>
+  {% else %}<li class="muted">No events yet.</li>{% endfor %}
+</ul>
 </details>
+</aside>
+</div>
 <div class="card no-print">
 
 {% if report.status == 'resolved' %}
   {% if report.qty_outstanding > 0 %}
-<p class="note">Resolved with {{ report.qty_outstanding }} unit(s) outstanding (for example, credited).</p>
+<p class="note">Resolved. {{ report.qty_outstanding }} unit(s) credited or written off.</p>
   {% else %}
 <p class="note">Resolved. Nothing is outstanding for this report.</p>
   {% endif %}
 {% elif report.qty_outstanding == 0 %}
-<p class="note">Nothing outstanding. The next receiving memo for this PO resolves it.</p>
+<p class="note">Nothing outstanding. The next memo closes this.</p>
 {% else %}
-<p class="note">{{ report.qty_outstanding }} unit(s) still outstanding. A later receiving memo closes this.</p>
+<p class="note">{{ report.qty_outstanding }} unit(s) still outstanding.</p>
 {% endif %}
 
 <form method="post">

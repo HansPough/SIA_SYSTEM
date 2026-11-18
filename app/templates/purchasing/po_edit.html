@@ -2,8 +2,8 @@
 {% import '_macros.html' as m %}
 {% block title %}Edit PO {{ po.po_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Edit Purchase Order</h1><span class="badge">{{ po.po_no }}</span></div>
-<p class="note">Only a draft PO can be edited: delivery date and terms.</p>
+<div class="page-head"><h1>Edit purchase order</h1><span class="badge">{{ po.po_no }}</span></div>
+<p class="note">Draft only. Change the delivery date or terms.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}

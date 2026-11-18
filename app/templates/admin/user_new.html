@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}New User{% endblock %}
+{% block title %}New user{% endblock %}
 {% block content %}
-<div class="page-head"><h1>New User</h1></div>
-<p class="note">Owner only. Drivers and suppliers have no accounts.</p>
+<div class="page-head"><h1>New user</h1></div>
+<p class="note">Drivers and suppliers do not need accounts.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Username', 'username', 'text', value=f.get('username', ''), required=True) }}
@@ -22,7 +22,7 @@
     </select>
     <small>Required for shop and warehouse roles.</small>
   </div>
-  {{ m.field('Password', 'password', 'password', required=True, help='At least 8 characters.') }}
+  {{ m.field('Password', 'password', 'password', required=True, help='at least 8 characters') }}
   {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or not f), help=' user can log in') }}
 </div>
 <div class="actions">

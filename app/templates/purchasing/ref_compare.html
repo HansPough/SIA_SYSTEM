@@ -2,8 +2,8 @@
 {% import '_macros.html' as m %}
 {% block title %}Choose Suppliers {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Choose Suppliers</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
-<p class="note">Pick a supplier per item. Not now? <strong>Keep it open</strong> and ask more suppliers.</p>
+<div class="page-head"><h1>Choose suppliers</h1><span class="badge">{{ data.ref.ref_no }}</span></div>
+<p class="note">Pick a supplier per item. <strong>Keep it open</strong> to ask more later.</p>
 
 {% if data.pending %}
 <div class="flash">This REF is already waiting for the owner's decision.</div>
@@ -27,11 +27,11 @@
       <input type="radio" name="choice_{{ l.ref_item_id }}" value="{{ o.key }}" {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
       <strong>{{ o.supplier_name }}</strong>
       &mdash; {{ o.unit_price|money }} each, can supply {{ o.max_qty }}{% if o.max_qty < l.open %} (short by {{ l.open - o.max_qty }}){% endif %}{% if o.lead %}, {{ o.lead }} day(s){% endif %}
-      {% if o.expired %}<span class="badge warn">quotation expired</span>{% endif %}
+      {% if o.expired %}<span class="badge s-warn">expired</span>{% endif %}
     </label>
     {% else %}
     <small class="muted">No supplier has quoted this item yet.
-      <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers (new RFQ)</a></small>
+      <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers</a></small>
     {% endfor %}
     <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" {{ 'checked' if l.default == 'open' }}>
       Not now: keep it open (ask more suppliers, order it later)</label>
@@ -44,8 +44,8 @@
 </tbody>
 </table></div>
 <div class="actions">
-  <button type="submit" class="btn primary">Send to the owner for approval</button>
-  <a class="btn secondary" href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">Record another quotation</a>
+  <button type="submit" class="btn primary">Send for approval</button>
+  <a class="btn secondary" href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">Record quotation</a>
   <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
 </div>
 </form>

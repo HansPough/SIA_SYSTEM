@@ -15,7 +15,7 @@
 <tr><td><strong>{{ r.code }}</strong></td><td>{{ r.name }}</td>
 <td><span class="badge">{{ r.loc_type|capitalize }}</span></td><td>{{ r.address or '–' }}</td>
 <td class="num">{{ r.n_users }}</td><td class="num">{{ r.qty_on_hand }}</td>
-<td><span class="badge {{ '' if r.is_active else 'warn' }}">{{ 'Active' if r.is_active else 'Inactive' }}</span></td>
+<td>{{ m.status('active' if r.is_active else 'inactive') }}</td>
 <td><a class="btn small" href="{{ url_for('admin.location_edit', location_id=r.id) }}">Open</a></td></tr>
 {% else %}
 <tr><td colspan="8" class="muted">No locations found.</td></tr>

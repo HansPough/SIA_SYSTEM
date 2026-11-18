@@ -10,6 +10,8 @@ from flask import Flask, abort, g, request, session, render_template, url_for
 from .config import Config
 from .extensions import db
 from .roles import ALSO_ACTIVE, MENU, ROLE_LABELS
+from .statuses import label as status_label, tone as status_tone
+from . import live as live_state
 
 
 def create_app():
@@ -19,12 +21,13 @@ def create_app():
     # Updated styling and navigation must get new URLs after a deployment.
     asset_versions = {
         name: hashlib.sha256((Path(app.static_folder) / name).read_bytes()).hexdigest()[:12]
-        for name in ("css/style.css", "js/app.js")
+        for name in ("css/style.css", "js/app.js", "js/live.js")
     }
 
     from .blueprints import (auth, dashboard, requisition, inventory, purchasing,
-                             delivery, admin, documents)
-    for module in (auth, dashboard, requisition, inventory, purchasing, delivery, admin, documents):
+                             delivery, admin, documents, live as live_bp)
+    for module in (auth, dashboard, requisition, inventory, purchasing, delivery, admin,
+                   documents, live_bp):
         app.register_blueprint(module.bp)
 
     @app.before_request
@@ -66,6 +69,14 @@ def create_app():
         g._nav_counts = counts
         return counts
 
+    def _live_rev():
+        """The token the browser compares so other users' saves appear by themselves."""
+        cached = getattr(g, "_live_rev", None)
+        if cached is None:
+            cached = live_state.revision()
+            g._live_rev = cached
+        return cached
+
     @app.context_processor
     def inject_layout():
         role = session.get("role")
@@ -97,12 +108,16 @@ def create_app():
             "nav_counts": counts,
             "attention": attention,
             "attention_total": sum(n for _l, _e, n in attention),
+            "live_rev": "%d:%d" % (_live_rev(), sum(counts.values())),
+            "live_page": live_state.is_live_page(request.endpoint),
             "active_menu": active_menu,
             "current_role": role,
             "role_label": ROLE_LABELS.get(role, ""),
             "menu": MENU.get(role, []),
             "role_labels": ROLE_LABELS,
             "current_endpoint": request.endpoint,
+            "status_tone": status_tone,
+            "status_label": status_label,
             "dev_login": app.config.get("DEV_LOGIN", False),
             "company": app.config.get("COMPANY_NAME", "3T Tire Supply"),
             "my_user": {"id": session.get("user_id"), "name": session.get("user_name")},
@@ -110,6 +125,9 @@ def create_app():
 
     from .alert_snooze import SNOOZE_CHOICES
     app.jinja_env.globals["SNOOZE_CHOICES"] = SNOOZE_CHOICES
+    # Globals (not only context values) so imported macros can use them too.
+    app.jinja_env.globals["status_tone"] = status_tone
+    app.jinja_env.globals["status_label"] = status_label
 
     @app.template_global("discrepancy_counts")
     def discrepancy_counts():
@@ -137,6 +155,16 @@ def create_app():
         except Exception:
             app.logger.warning("Document %s %s unavailable", doc_type, doc_id, exc_info=True)
             return None
+
+    @app.template_global("load_lifecycle")
+    def load_lifecycle(doc_type, doc_id):
+        """The history shown in Progress and details (created, sent, signed, ...)."""
+        from . import document_ops as docs
+        try:
+            return docs.lifecycle(doc_type, doc_id)
+        except Exception:
+            app.logger.warning("Lifecycle %s %s unavailable", doc_type, doc_id, exc_info=True)
+            return []
 
     @app.template_global("signer_info")
     def signer_info():

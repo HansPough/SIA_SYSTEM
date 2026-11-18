@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Approve Suppliers and Prices{% endblock %}
+{% block title %}Approve supplier{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Approve Suppliers and Prices</h1>
-  <span class="badge {{ 'warn' if appr.batch_pending }}">{{ 'Waiting for you' if appr.batch_pending else 'Decided' }}</span>
+<div class="page-head"><h1>Approve supplier</h1>
+  {{ m.status('pending', label='Waiting for you') if appr.batch_pending else m.status('approved', label='Decided') }}
 </div>
 <p class="note">Each approved supplier gets its own PO for the warehouse manager to send.</p>
 <div class="card">
@@ -19,7 +19,7 @@
 {% for b in appr.batch %}
 <div class="card">
   <h2 style="margin-top:0">{{ b.supplier_name }}
-    <span class="badge {{ 'warn' if b.decision == 'pending' }}">{{ b.decision|capitalize }}</span></h2>
+    {{ m.status(b.decision) }}</h2>
   <p class="muted">{{ 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') if b.basis == 'quotation' else 'Agreed price (regular supplier)' }}</p>
   <div class="table-wrap"><table class="data">
   <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr></thead>
@@ -45,7 +45,7 @@
   </div>
   {% elif b.po %}
   <p><a class="btn small primary" href="{{ url_for('purchasing.po_detail', po_id=b.po.id) }}">Open {{ b.po.po_no }}</a>
-    <span class="muted">{{ b.po.status|po_status }}</span></p>
+    {{ m.status(b.po.status|po_status) }}</p>
   {% elif b.remarks %}<p class="muted">Remarks: {{ b.remarks }}</p>{% endif %}
 </div>
 {% endfor %}

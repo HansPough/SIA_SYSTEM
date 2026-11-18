@@ -2,11 +2,15 @@
 {% block title %}Purchase Order {{ po.po_no }}{% endblock %}
 {% block content %}
 {% if po.status == 'draft' %}
-<p class="note">Owner approved. {% if current_role == 'warehouse_manager' %}Send it to the supplier, then press <strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it to the supplier.{% endif %}</p>
+<p class="note">Owner approved. {% if current_role == 'warehouse_manager' %}Send it, then press <strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it.{% endif %}</p>
 {% endif %}
+<div class="doc-split">
+<div class="doc-main">
 {% set d = load_document('PO', po.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
-<details class="card no-print"><summary>Progress and details</summary>
+</div>
+<aside class="doc-side">
+<details class="card no-print" open><summary>Progress and details</summary>
 <dl class="info">
   <div><dt>PO no.</dt><dd>{{ po.po_no }}</dd></div>
   <div><dt>Date</dt><dd>{{ (po.po_date|string)[:10] }}</dd></div>
@@ -17,20 +21,15 @@
   <div><dt>Total</dt><dd>{{ po.total_amount|money }}</dd></div>
 </dl>
 
-<h2>Items</h2>
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">Qty ordered</th><th class="num">Unit price</th><th class="num">Amount</th><th class="num">Qty received</th></tr></thead>
-<tbody>
-{% for l in po.lines %}
-<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
-<td class="num">{{ l.qty_ordered }}</td><td class="num">{{ l.unit_price|money }}</td>
-<td class="num">{{ l.amount|money }}</td><td class="num">{{ l.qty_received }}</td></tr>
-{% else %}
-<tr><td colspan="5" class="muted">This PO has no items.</td></tr>
-{% endfor %}
-</tbody>
-</table></div>
+<h2>Lifecycle</h2>
+<ul class="timeline">
+  {% for e in load_lifecycle('PO', po.id) %}
+  <li><span class="when">{{ e.when }}</span><span class="what">{{ e.what }}</span><span class="who">{{ e.who }}</span></li>
+  {% else %}<li class="muted">No events yet.</li>{% endfor %}
+</ul>
 </details>
+</aside>
+</div>
 <div class="actions">
   {% if po.status == 'draft' and current_role == 'warehouse_manager' %}
   <form method="post">

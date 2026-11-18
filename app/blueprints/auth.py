@@ -96,6 +96,7 @@ def logout():
         except Exception:
             inv.rollback()
     session.clear()
+    flash("You are logged out.", "info")
     return redirect(url_for("auth.login"))
 
 
@@ -156,7 +157,7 @@ def signature():
                 inv.backend().execute("UPDATE users SET signature_data = :d WHERE id = :i",
                                       d=data, i=user_id)
                 inv.write_audit(user_id, "update", "users", user_id, new={"signature": "set"})
-                flash("Signature saved. It is stamped on every document you sign from now on.", "success")
+                flash("Signature saved.", "success")
             inv.commit()
         except ValueError as e:
             inv.rollback()

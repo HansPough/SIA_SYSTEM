@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Incoming Deliveries{% endblock %}
+{% block title %}Incoming deliveries{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Incoming Deliveries</h1></div>
+<div class="page-head"><h1>Incoming deliveries</h1></div>
 <div class="card">
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search TS no. or RF no...">
@@ -19,10 +19,11 @@
 {% for r in res.rows %}
 <tr><td class="nowrap">{{ r.ts_no }}</td><td class="nowrap">{{ r.rf_no }}</td><td>{{ r.from_loc }}</td><td>{{ r.driver or '–' }}</td>
 <td>{{ r.vehicle or '–' }}</td>
-<td><span class="badge {{ 'warn' if r.status == 'in_transit' }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
-<td>{% if r.n_variance %}<span class="badge {{ 'warn' if r.n_open_variance }}">{{ ('Open (' ~ r.n_open_variance ~ ')') if r.n_open_variance else 'Resolved' }}</span>{% else %}–{% endif %}</td>
+<td>{{ m.status(r.status) }}</td>
+<td>{% if r.n_variance %}{{ m.status('open', label='Open (' ~ r.n_open_variance ~ ')') if r.n_open_variance else m.status('resolved') }}{% else %}–{% endif %}</td>
 <td>{% if r.status == 'in_transit' %}<a class="btn small primary" href="{{ url_for('delivery.delivery_receive', ts_id=r.id) }}">Receive</a>
-{% else %}<a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.id) }}">Open</a>{% endif %}</td></tr>
+{% else %}{% if r.ar_id %}<a class="btn small primary" href="{{ url_for('documents.view', doc_type='AR', doc_id=r.ar_id) }}">AR</a>{% endif %}
+<a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.id) }}">Open</a>{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="8" class="muted">No deliveries yet.</td></tr>
 {% endfor %}

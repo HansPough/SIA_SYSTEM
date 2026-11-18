@@ -332,6 +332,16 @@ def _waiting_rf(warehouse_id, item_id):
         "AND x.qty_requested - x.qty_reserved > 0 ORDER BY r.id LIMIT 1", i=item_id, w=warehouse_id)
 
 
+def ref_for_alert(alert_id):
+    """The REF already raised from this restock alert, if any (cancelled ones do not count)."""
+    if not alert_id:
+        return None
+    return _b().one(
+        "SELECT id, ref_no, status FROM replenishments "
+        "WHERE notification_id = :n AND status <> 'cancelled' ORDER BY id DESC LIMIT 1",
+        n=alert_id)
+
+
 def create_ref(user, warehouse_id, remarks, pairs, submit, alert_id=None):
     """Save the REF and its lines. Returns (ref_id, ref_no, status).
 
@@ -345,6 +355,9 @@ def create_ref(user, warehouse_id, remarks, pairs, submit, alert_id=None):
         n = _b().one("SELECT location_id FROM notifications WHERE id = :i", i=alert_id)
         if n is None or n["location_id"] != warehouse_id:
             raise InventoryError("That restock alert does not belong to this warehouse.")
+        existing = ref_for_alert(alert_id)
+        if existing:
+            raise InventoryError("A replenishment already exists for this alert: %s." % existing["ref_no"])
     lines = {}
     for item_id, qty, reason in pairs:
         if not str(item_id).strip() and not str(qty).strip():

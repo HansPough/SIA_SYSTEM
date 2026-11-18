@@ -3,10 +3,10 @@
 {% block title %}Supplier {{ supplier.supplier_name }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>{{ supplier.supplier_name }}</h1>
-  <span class="badge">{{ 'Regular supplier' if supplier.is_regular else 'Supplier' }}</span>
-  {% if not supplier.is_active %}<span class="badge warn">Inactive</span>{% endif %}
+  <span class="badge s-info">{{ 'Regular' if supplier.is_regular else 'Supplier' }}</span>
+  {% if not supplier.is_active %}{{ m.status('inactive') }}{% endif %}
 </div>
-<p class="note">Agreed prices are for regular suppliers (no RFQ needed).</p>
+<p class="note">Agreed prices are for regular suppliers (no RFQ).</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Supplier name', 'supplier_name', 'text',
@@ -18,10 +18,10 @@
   {{ m.field('Address', 'address', 'text', value=f.get('address', supplier.address or ''), col=2) }}
   {{ m.field('Regular supplier', 'is_regular', 'checkbox',
              value=(f.get('is_regular') or (not f and supplier.is_regular)),
-             help=' RFQ can be skipped, the agreed price is used') }}
+             help=' skip the RFQ, use the agreed price') }}
   {{ m.field('Active', 'is_active', 'checkbox',
              value=(f.get('is_active') or (not f and supplier.is_active)),
-             help=' can be chosen for new RFQs and approvals') }}
+             help=' can be used for new orders') }}
 </div>
 
 {% if supplier.prices %}

@@ -59,7 +59,8 @@ def alert_detail(alert_id):
     alert = pur.get_alert(alert_id, loc) if loc else None
     if alert is None:
         return render_template("404.html"), 404
-    return render_template("purchasing/alert_detail.html", alert=alert)
+    return render_template("purchasing/alert_detail.html", alert=alert,
+                           existing_ref=pur.ref_for_alert(alert_id))
 
 
 @bp.route("/alerts/<int:alert_id>/snooze", methods=["POST"])
@@ -74,7 +75,7 @@ def alert_snooze(alert_id):
         inv.rollback()
         flash(str(e), "error")
     else:
-        flash("%s is silent until %s. It stays open and counts again then." % (no, until.strftime("%d %b %Y")), "success")
+        flash("%s is silent until %s." % (no, until.strftime("%d %b %Y")), "success")
     return redirect(url_for("purchasing.alert_list"))
 
 
@@ -145,6 +146,10 @@ def ref_new():
         if alert is None:
             flash("That restock alert was not found for your warehouse.", "error")
             return redirect(url_for("purchasing.alert_list"))
+        existing = pur.ref_for_alert(alert["id"])
+        if existing:
+            flash("That alert already has %s." % existing["ref_no"], "info")
+            return redirect(url_for("purchasing.ref_detail", ref_id=existing["id"]))
 
     if request.method == "POST":
         try:
@@ -161,10 +166,10 @@ def ref_new():
             flash(str(e), "error")
         else:
             if status == "submitted":
-                flash("%s signed and submitted.%s" % (ref_no, " The restock alert was completed."
+                flash("%s signed and submitted.%s" % (ref_no, " Alert completed."
                                                       if alert else ""), "success")
             else:
-                flash("%s saved as a draft. Submit it when you are ready." % ref_no, "success")
+                flash("%s saved as draft." % ref_no, "success")
             return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
 
     try:
@@ -173,7 +178,7 @@ def ref_new():
         flash(str(e), "error")
         return redirect(url_for("purchasing.ref_list"))
     return render_template("purchasing/ref_new.html", data=data, alert=alert, f=request.form,
-                           created_by=user["name"])
+                           created_by=user["name"], next_no=inv.peek_doc_no("REF"))
 
 
 @bp.route("/ref/<int:ref_id>", methods=["GET", "POST"])
@@ -193,7 +198,7 @@ def ref_detail(ref_id):
                 inv.rollback()
                 flash(str(e), "error")
             else:
-                flash("%s signed and submitted. The restock alert was completed." % ref_no, "success")
+                flash("%s signed and submitted." % ref_no, "success")
         return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
     can_cancel, _why = pur.can_cancel(user, ref)
     return render_template("purchasing/ref_detail.html", ref=ref, can_cancel=can_cancel)
@@ -247,7 +252,8 @@ def rfq_new(ref_id):
         else:
             flash("%s recorded as sent to %d supplier(s)." % (rfq_no, n), "success")
             return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
-    return render_template("purchasing/rfq_new.html", data=data, f=request.form)
+    return render_template("purchasing/rfq_new.html", data=data, f=request.form,
+                           next_no=inv.peek_doc_no("RFQ"))
 
 
 @bp.route("/ref/<int:ref_id>/quotation/new", methods=["GET", "POST"])
@@ -311,9 +317,9 @@ def ref_compare(ref_id):
             flash(str(e) if isinstance(e, InventoryError) else "Choose a supplier for every item.", "error")
         else:
             left = pur.get_ref(ref_id, user)["has_open"]
-            flash("Sent to the owner for approval: %d supplier%s.%s" % (
+            flash("Sent for approval: %d supplier%s.%s" % (
                 n, "" if n == 1 else "s",
-                " Some items are still open: ask more suppliers (new RFQ) or record another quotation." if left else ""),
+                " Some items are still open." if left else ""),
                 "success")
             for note in notes:
                 flash(note, "info")
@@ -399,10 +405,10 @@ def approval_detail(approval_id):
             rejected = [r for r in results if r[2] == "rejected"]
             msg = ""
             if approved:
-                msg += "Approved and signed: %s. Ready for the warehouse manager to send. " % ", ".join(
+                msg += "Approved and signed: %s. Ready to send. " % ", ".join(
                     "%s (%s)" % (r[3], r[1]) for r in approved)
             if rejected:
-                msg += "Rejected: %s. Those items went back to the warehouse manager." % ", ".join(
+                msg += "Rejected: %s. Sent back to the warehouse manager." % ", ".join(
                     r[1] for r in rejected)
             flash(msg.strip(), "success")
             if len(approved) == 1 and not rejected:

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}New Supplier{% endblock %}
+{% block title %}New supplier{% endblock %}
 {% block content %}
-<div class="page-head"><h1>New Supplier</h1></div>
-<p class="note">Agreed prices are only needed for a regular supplier (the one you use without an RFQ).</p>
+<div class="page-head"><h1>New supplier</h1></div>
+<p class="note">Agreed prices are only for regular suppliers.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Supplier name', 'supplier_name', 'text', value=f.get('supplier_name', ''), required=True, col=2) }}
@@ -12,9 +12,9 @@
   {{ m.field('Phone', 'phone', 'text', value=f.get('phone', '')) }}
   {{ m.field('Address', 'address', 'text', value=f.get('address', ''), col=2) }}
   {{ m.field('Regular supplier', 'is_regular', 'checkbox', value=f.get('is_regular'),
-             help=' RFQ can be skipped, the agreed price is used') }}
+             help=' skip the RFQ, use the agreed price') }}
   {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or not f),
-             help=' can be chosen for new RFQs and approvals') }}
+             help=' can be used for new orders') }}
 </div>
 
 <h2>Agreed prices (optional)</h2>

@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Edit Location {{ location.code }}{% endblock %}
+{% block title %}Edit location {{ location.code }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Edit Location</h1><span class="badge">{{ location.code }}</span></div>
+<div class="page-head"><h1>Edit location</h1><span class="badge">{{ location.code }}</span></div>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Code', 'code', 'text', value=f.get('code', location.code), required=True) }}
@@ -12,7 +12,7 @@
       <option value="shop" {{ 'selected' if (f.get('loc_type') or location.loc_type) == 'shop' }}>Shop</option>
       <option value="warehouse" {{ 'selected' if (f.get('loc_type') or location.loc_type) == 'warehouse' }}>Warehouse</option>
     </select>
-    <small>The type cannot change once the location is used on a requisition.</small>
+    <small>The type is locked after the first requisition.</small>
   </div>
   {{ m.field('Address', 'address', 'text', value=f.get('address', location.address or ''), col=2) }}
   {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or (not f and location.is_active)), help=' can be used for new stock and users') }}

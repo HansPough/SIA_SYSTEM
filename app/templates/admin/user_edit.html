@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Edit User {{ user.username }}{% endblock %}
+{% block title %}Edit user {{ user.username }}{% endblock %}
 {% block content %}
 {% set role_sel = f.get('role_id') if f.get('role_id') else user.role_id %}
 {% set loc_sel = f.get('location_id') if f.get('location_id') else user.location_id %}
-<div class="page-head"><h1>Edit User</h1><span class="badge">{{ user.username }}</span></div>
+<div class="page-head"><h1>Edit user</h1><span class="badge">{{ user.username }}</span></div>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Username', 'username', 'text', value=f.get('username', user.username), required=True) }}
@@ -21,7 +21,7 @@
       {% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if loc_sel|string == l.id|string }}>{{ l.code }} — {{ l.name }} ({{ l.loc_type }})</option>{% endfor %}
     </select>
   </div>
-  {{ m.field('New password', 'password', 'password', help='blank = keep the current one, minimum 8 characters') }}
+  {{ m.field('New password', 'password', 'password', help='blank = keep current, min. 8 characters') }}
   {{ m.field('Active', 'is_active', 'checkbox', value=(f.get('is_active') or (not f and user.is_active)), help=' user can log in') }}
 </div>
 <div class="actions">

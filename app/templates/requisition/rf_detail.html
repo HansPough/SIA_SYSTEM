@@ -1,8 +1,13 @@
 {% extends 'base.html' %}
-{% block title %}Requisition Form {{ rf.rf_no }}{% endblock %}
+{% import '_macros.html' as m %}
+{% block title %}Requisition {{ rf.rf_no }}{% endblock %}
 {% block content %}
+<div class="doc-split">
+<div class="doc-main">
 {% include 'print/_document_body.html' %}
-<details class="card no-print"><summary>Progress and details</summary>
+</div>
+<aside class="doc-side">
+<details class="card no-print" open><summary>Progress and details</summary>
 <dl class="info">
   <div><dt>RF no.</dt><dd>{{ rf.rf_no }}</dd></div>
   <div><dt>Date</dt><dd>{{ ((rf.submitted_at or rf.created_at)|string)[:10] }}</dd></div>
@@ -20,39 +25,51 @@
 </dl>
 
 <h2>Items</h2>
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">Requested</th><th class="num">Reserved</th><th class="num">Delivered</th><th class="num">Still to reserve</th><th class="num">Still to deliver</th></tr></thead>
-<tbody>
+<div class="side-list">
 {% for l in rf.lines %}
-<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
-<td class="num">{{ l.qty_requested }}</td><td class="num">{{ l.qty_reserved }}</td><td class="num">{{ l.qty_delivered }}</td>
-<td class="num">{{ l.still_to_reserve }}</td><td class="num">{{ l.still_to_deliver }}</td></tr>
+<div class="side-item">
+  <strong>{{ l.item_name }}</strong><small>{{ l.item_code }}</small>
+  <dl class="mini">
+    <div><dt>Requested</dt><dd>{{ l.qty_requested }}</dd></div>
+    <div><dt>Reserved</dt><dd>{{ l.qty_reserved }}</dd></div>
+    <div><dt>Delivered</dt><dd>{{ l.qty_delivered }}</dd></div>
+    <div><dt>To reserve</dt><dd>{{ l.still_to_reserve }}</dd></div>
+    <div><dt>To deliver</dt><dd>{{ l.still_to_deliver }}</dd></div>
+  </dl>
+</div>
 {% else %}
-<tr><td colspan="6" class="muted">This requisition has no items.</td></tr>
+<p class="muted">No items.</p>
 {% endfor %}
-</tbody>
-</table></div>
+</div>
 
 <h2>Transfer slips</h2>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>TS no.</th><th>Date</th><th>Status</th></tr></thead>
 <tbody>
 {% for t in rf.ts %}
-<tr><td>{% if current_role in ['owner', 'warehouse_manager'] or t.status in ['in_transit', 'delivered', 'delivered_with_variance'] %}<a href="{{ url_for('delivery.transfer_detail', ts_id=t.id) }}">{{ t.ts_no }}</a>{% else %}{{ t.ts_no }}{% endif %}</td><td>{{ (t.created_at|string)[:10] }}</td><td>{{ t.status|replace('_', ' ')|capitalize }}</td></tr>
+<tr><td>{% if current_role in ['owner', 'warehouse_manager'] or t.status in ['in_transit', 'delivered', 'delivered_with_variance'] %}<a href="{{ url_for('delivery.transfer_detail', ts_id=t.id) }}">{{ t.ts_no }}</a>{% else %}{{ t.ts_no }}{% endif %}</td><td>{{ (t.created_at|string)[:10] }}</td><td>{{ m.status(t.status) }}</td></tr>
 {% else %}
-<tr><td colspan="3" class="muted">No transfer slips yet. The Delivery module creates them.</td></tr>
+<tr><td colspan="3" class="muted">No transfers yet.</td></tr>
 {% endfor %}
 </tbody>
 </table></div>
 
+<h2>Lifecycle</h2>
+<ul class="timeline">
+  {% for e in load_lifecycle('RF', rf.id) %}
+  <li><span class="when">{{ e.when }}</span><span class="what">{{ e.what }}</span><span class="who">{{ e.who }}</span></li>
+  {% else %}<li class="muted">No events yet.</li>{% endfor %}
+</ul>
 </details>
+</aside>
+</div>
 <div class="actions">
   {% if current_role == 'warehouse_manager' and rf.status in ['open', 'partially_delivered'] %}
-  <a class="btn primary" href="{{ url_for('inventory.rfqueue_review', rf_id=rf.id) }}">{{ 'Review and reserve stock' if queue_rf and queue_rf.lines|selectattr('remaining', 'gt', 0)|list and not (queue_rf.active_transfer and queue_rf.active_transfer.status in ['draft', 'assigned', 'loaded']) else 'View reservation and transfer' }}</a>
+  <a class="btn primary" href="{{ url_for('inventory.rfqueue_review', rf_id=rf.id) }}">{{ 'Reserve stock' if queue_rf and queue_rf.lines|selectattr('remaining', 'gt', 0)|list and not (queue_rf.active_transfer and queue_rf.active_transfer.status in ['draft', 'assigned', 'loaded']) else 'View transfer' }}</a>
   {% endif %}
   {% if current_role == 'shop_manager' and rf.status == 'draft' %}
   <form method="post">
-    <button type="submit" name="action" value="submit_rf" class="btn primary">Sign &amp; send RF to warehouse</button>
+    <button type="submit" name="action" value="submit_rf" class="btn primary">Sign &amp; send</button>
   </form>
   {% endif %}
   {% if can_cancel %}

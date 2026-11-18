@@ -72,6 +72,76 @@ def _slot_data(doc_type, doc_id, user, doc_hash):
     return out
 
 
+LIFECYCLE_TABLES = {
+    "RF": "requisitions",
+    "REF": "replenishments",
+    "PO": "purchase_orders",
+    "TS": "transfer_slips",
+    "AR": "acknowledgment_receipts",
+    "RM": "goods_receipts",
+    "DR": "discrepancy_reports",
+}
+
+LIFECYCLE_ACTIONS = {
+    "create": "Created",
+    "submit": "Submitted",
+    "approve": "Approved",
+    "reject": "Rejected",
+    "send": "Sent to supplier",
+    "receive": "Received",
+    "release": "Released",
+    "reserve": "Stock reserved",
+    "assign": "Driver assigned",
+    "load": "Loaded",
+    "cancel": "Cancelled",
+    "resolve": "Resolved",
+    "update": "Updated",
+    "driver_paper": "Driver without signature",
+    "snooze": "Snoozed",
+    "wake": "Woke up",
+    "complete": "Alert completed",
+}
+
+
+def lifecycle(doc_type, doc_id):
+    """Who did what and when for one document: audit rows + signed lines.
+
+    Read-only and safe on a missing history: an unknown document just returns [].
+    """
+    doc_type = (doc_type or "").upper()
+    table = LIFECYCLE_TABLES.get(doc_type)
+    if not table or not doc_id:
+        return []
+    events = []
+    try:
+        rows = _b().all(
+            "SELECT a.action, a.created_at, u.full_name AS who FROM audit_log a "
+            "LEFT JOIN users u ON u.id = a.user_id "
+            "WHERE a.table_name = :t AND a.record_id = :i AND a.action <> 'sign' ORDER BY a.id",
+            t=table, i=doc_id)
+        for row in rows:
+            events.append({
+                "when": str(row.get("created_at") or "")[:16],
+                "what": LIFECYCLE_ACTIONS.get((row.get("action") or "").lower(),
+                                              (row.get("action") or "").replace("_", " ").capitalize()),
+                "who": row.get("who") or "",
+            })
+    except Exception:
+        inv.rollback()
+    try:
+        for sig in signing.signatures_for(doc_type, doc_id).values():
+            role = signing.role_title(sig.get("signer_role"))
+            events.append({
+                "when": str(sig.get("signed_at") or "")[:16],
+                "what": "Signed (%s)" % role if role else "Signed",
+                "who": sig.get("signer_name") or "",
+            })
+    except Exception:
+        inv.rollback()
+    events.sort(key=lambda e: e["when"])
+    return events
+
+
 def _document(doc_type, title, doc_no, status, date, party_from, party_to,
               meta, items, user, doc_id, show_prices=False, total=None, notes=None,
               show_amounts=True, prepared=None):

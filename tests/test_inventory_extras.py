@@ -247,7 +247,7 @@ class VoidTests(Base):
         self.sell(2)
         self.req()
         self.login("shopmgr")
-        self.assertIn("Waiting for your confirmation: 1", self.c.get("/").get_data(as_text=True))
+        self.assertIn("1 to confirm", self.c.get("/").get_data(as_text=True))
 
 
 class RfQueueTests(Base):
@@ -277,7 +277,7 @@ class RfQueueTests(Base):
         short = [x for x in self.alerts("restock") if x["reason"] == "shortage"]
         self.assertEqual([(x["item_id"]) for x in short], [B])
         self.assertIn("5 still needed", self.c.get("/inventory/rf-queue/1").get_data(as_text=True))
-        self.assertIn("1</td><td>", self.c.get("/inventory/rf-queue").get_data(as_text=True))
+        self.assertRegex(self.c.get("/inventory/rf-queue").get_data(as_text=True), r"1</td><td[^>]*>")
         # reserving noted the RF with the warehouse manager's signature, once
         sig = self.be.all("SELECT slot, signer_name FROM document_signatures WHERE doc_type = 'RF'")
         self.assertEqual([(s["slot"], s["signer_name"]) for s in sig], [("noted_by", "whmgr")])

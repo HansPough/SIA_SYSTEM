@@ -167,7 +167,7 @@ class RequisitionFormTests(Base):
 
         self.login("shopmgr")
         detail = self.c.get("/requisition/rf/%d" % rf["id"]).get_data(as_text=True)
-        self.assertIn("Sign &amp; send RF to warehouse", detail)
+        self.assertIn("Sign &amp; send", detail)
         self.c.post("/requisition/rf/%d" % rf["id"], data={"action": "submit_rf"})
         rf = self.be.one("SELECT * FROM requisitions")
         self.assertEqual(rf["status"], "open")
@@ -201,6 +201,24 @@ class RequisitionFormTests(Base):
             self.login(who)
             self.assertEqual(self.c.get("/requisition/rf/new").status_code, 403)
             self.assertEqual(self.c.get("/requisition/alerts/1/dismiss").status_code, 403)
+
+    def test_one_rf_per_low_stock_alert(self):
+        self.be.execute("INSERT INTO notifications (notif_type, location_id, status) "
+                        "VALUES ('low_stock', :l, 'active')", l=SHOP)
+        self.be.commit()
+        alert_id = self.be.one("SELECT MAX(id) AS i FROM notifications")["i"]
+        self.make_rf(qty=15, submit=False, alert_id=alert_id)
+        rf = self.be.one("SELECT id, rf_no FROM requisitions")
+        page = self.c.get("/requisition/alerts/%d" % alert_id).get_data(as_text=True)
+        self.assertIn("Open %s" % rf["rf_no"], page)
+        before = self.be.one("SELECT COUNT(*) AS n FROM requisitions")["n"]
+        self.login("shopmgr")
+        r = self.c.post("/requisition/rf/new", data={
+            "warehouse_id": str(WH), "remarks": "again", "item_id[]": [str(A)],
+            "qty_requested[]": ["2"], "action": "save_draft", "alert_id": str(alert_id)},
+            follow_redirects=True)
+        self.assertIn("already has", r.get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM requisitions")["n"], before)
 
     def test_rf_list_is_scoped_by_role(self):
         self.make_rf(shop="shopmgr", qty=3)

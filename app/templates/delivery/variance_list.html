@@ -2,9 +2,8 @@
 {% import '_macros.html' as m %}
 {% block title %}Delivery Variances{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ 'Discrepancies' if current_role in ['owner', 'warehouse_manager'] else 'Delivery Variances' }}</h1>{% if current_role == 'shop_manager' %}<a class="btn ghost" href="{{ url_for('delivery.delivery_list') }}">Incoming deliveries</a>{% endif %}</div>
+<div class="page-head"><h1>{{ 'Discrepancies' if current_role in ['owner', 'warehouse_manager'] else 'Delivery variances' }}</h1>{% if current_role == 'shop_manager' %}<a class="btn ghost" href="{{ url_for('delivery.delivery_list') }}">Incoming deliveries</a>{% endif %}</div>
 {% if current_role in ['owner', 'warehouse_manager'] %}{% set tab = 'shops' %}{% include 'delivery/_discrepancy_tabs.html' %}{% endif %}
-<p class="page-sub">Items a <strong>shop</strong> rejected or found short when receiving from the warehouse.</p>
 <div class="card">
 <form method="get" class="filters">
   <select name="status"><option value="">Status: all</option>
@@ -22,7 +21,7 @@
 <td>{{ r.item_name }}<small>{{ r.item_code }}</small></td>
 <td class="num">{{ r.qty_expected }}</td><td class="num">{{ r.qty_received }}</td>
 <td class="num">{{ r.qty_rejected }}</td><td>{{ r.variance_reason or '–' }}</td>
-<td><span class="badge {{ 'warn' if not r.variance_resolved_at }}">{{ 'Open' if not r.variance_resolved_at else 'Resolved' }}</span></td>
+<td>{{ m.status('open') if not r.variance_resolved_at else m.status('resolved') }}</td>
 <td><a class="btn small" href="{{ url_for('documents.view', doc_type='AR', doc_id=r.ar_id) }}">Open AR</a></td></tr>
 {% else %}
 <tr><td colspan="11" class="muted">No shop variances found.</td></tr>

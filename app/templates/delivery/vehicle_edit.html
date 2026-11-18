@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Edit Vehicle {{ vehicle.plate_no }}{% endblock %}
+{% block title %}Edit vehicle {{ vehicle.plate_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Edit Vehicle</h1></div>
+<div class="page-head"><h1>Edit vehicle</h1></div>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Plate no.', 'plate_no', 'text', value=f.get('plate_no', vehicle.plate_no), required=True) }}

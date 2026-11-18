@@ -391,6 +391,7 @@ def list_incoming(shop_id, status="", q="", page=1):
            "LEFT JOIN vehicles v ON v.id = t.vehicle_id WHERE 1 = 1" + where)
     cols = ("SELECT t.id, t.ts_no, COALESCE(t.released_at, t.created_at) AS ts_date, r.rf_no, "
             "f.code AS from_loc, d.full_name AS driver, v.plate_no AS vehicle, t.status, "
+            "(SELECT ar.id FROM acknowledgment_receipts ar WHERE ar.ts_id = t.id LIMIT 1) AS ar_id, "
             "(SELECT COUNT(*) FROM acknowledgment_receipt_items ai "
             " JOIN transfer_slip_items ti ON ti.id = ai.ts_item_id "
             " WHERE ti.ts_id = t.id AND ai.qty_received < ai.qty_expected) AS n_variance, "

@@ -1,9 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Stock Count{% endblock %}
+{% block title %}Stock count{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Stock Count Sheet</h1><span class="badge">{{ locations|length }} location(s)</span></div>
-<p class="note">Type the real count. Only differences become a pending adjustment.</p>
+<div class="page-head"><h1>Stock count</h1></div>
 <form method="get" class="filters">
   {% if current_role == 'owner' %}
   <select name="location" onchange="this.form.submit()">
@@ -16,26 +15,38 @@
 </form>
 <form method="post">
 <input type="hidden" name="location" value="{{ loc_id }}">
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">On hand</th><th class="num">Counted</th><th>Note</th></tr></thead>
-<tbody>
-{% for i in items %}
-<tr><td>{{ i.item_name }}<small>{{ i.item_code }}</small><input type="hidden" name="item_id[]" value="{{ i.id }}"></td>
-<td class="num">{{ i.on_hand }}</td>
-<td><input type="number" min="0" name="qty_actual[]" value="{{ i.on_hand }}"></td>
-<td><input type="text" name="item_note[]" maxlength="200" placeholder="why it differs (optional)"></td></tr>
-{% else %}
-<tr><td colspan="4" class="muted">No items at this location.</td></tr>
-{% endfor %}
+<div class="item-add">
+  <div class="picker">
+    <input type="search" id="count-search" data-item-search="count" autocomplete="off"
+           placeholder="Search item or code to add..." aria-label="Search item to count">
+    <div class="picker-results" id="count-results" hidden></div>
+  </div>
+  <button type="button" class="btn primary" data-add-item="count">Add item</button>
+  <span class="muted" id="count-hint"></span>
+</div>
+<div class="table-wrap"><table class="data" data-allow-empty>
+<thead><tr><th>Item</th><th class="num">On hand</th><th class="num">Counted</th><th>Note</th><th></th></tr></thead>
+<tbody id="count-lines">
+<tr data-empty-row><td colspan="5" class="muted">Search above and add the items you counted.</td></tr>
 </tbody>
 </table></div>
 <div class="grid">
-  {{ m.field('Remarks for the approver', 'remarks', 'textarea', col=2,
-             help='for example: monthly cycle count, rack A') }}
+  {{ m.field('Remarks', 'remarks', 'textarea', col=2, help='why this count was done') }}
 </div>
 <div class="actions">
   <button type="submit" class="btn primary">Save count</button>
   <a class="btn ghost" href="{{ url_for('inventory.stock_list') }}">Back</a>
 </div>
 </form>
+
+<template id="count-row-template">
+  <tr class="line-row">
+    <td><span data-name></span><small data-code></small><input type="hidden" name="item_id[]"></td>
+    <td class="num" data-onhand></td>
+    <td><input type="number" min="0" name="qty_actual[]"></td>
+    <td><input type="text" name="item_note[]" maxlength="200" placeholder="note (optional)"></td>
+    <td class="row-actions"><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+  </tr>
+</template>
+<script type="application/json" id="item-data">{{ items|tojson }}</script>
 {% endblock %}

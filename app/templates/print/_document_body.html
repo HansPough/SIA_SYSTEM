@@ -13,7 +13,7 @@
       <h2 class="doc-title">{{ d.title }}</h2>
       <div class="doc-no">{{ d.doc_no }}</div>
       <div class="doc-date">Date: <strong>{{ d.date }}</strong></div>
-      <div class="doc-status"><span class="badge {{ 'warn' if d.status not in ['Delivered', 'Closed', 'Resolved', 'Received'] }}">{{ d.status }}</span></div>
+      <div class="doc-status">{{ m.status(d.status) }}</div>
     </div>
   </div>
 
@@ -72,12 +72,12 @@
       {% if s.can_sign %}
       <form method="post" action="{{ url_for('documents.sign', doc_type=d.doc_type, doc_id=d.doc_id) }}" class="sign-form no-print">
         <input type="hidden" name="slot" value="{{ s.key }}">
-        {{ m.signing_box('Signs this line with your account name and the current time. It cannot be changed afterwards.') }}
+        {{ m.signing_box('Signs this line with your account name and the time. It cannot be changed.') }}
         <button type="submit" class="btn small primary">Sign</button>
       </form>
       {% endif %}
     </div>
     {% endfor %}
   </div>
-  <p class="doc-foot">Signed electronically in the {{ company }} system. Each signature records the account, role, time and a fingerprint of this document (ref {{ d.doc_hash[:12]|upper }}).</p>
+  <p class="doc-foot">Signed electronically in the {{ company }} system. Each signature records the account, role, time and document fingerprint (ref {{ d.doc_hash[:12]|upper }}).</p>
 </div>

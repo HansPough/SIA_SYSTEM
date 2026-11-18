@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Dismiss Alert {{ alert.alert_no }}{% endblock %}
+{% block title %}Dismiss alert {{ alert.alert_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Dismiss Alert {{ alert.alert_no }}</h1><span class="badge warn">Active</span></div>
-<p class="note">The reason is saved. A new alert appears if the item is still low.</p>
+<div class="page-head"><h1>Dismiss alert {{ alert.alert_no }}</h1>{{ m.status('active') }}</div>
+<p class="note">A new alert appears if the item is still low.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Alert', 'alert_no', 'text', value=alert.alert_no, readonly=True) }}
   {{ m.field('Shop', 'shop', 'text', value=alert.shop, readonly=True) }}
   {{ m.field('Reason for dismissing', 'dismissed_reason', 'textarea', value=f.get('dismissed_reason', ''),
-             required=True, col=2, help='for example: slow-moving item') }}
+             required=True, col=2, help='why this alert is not needed') }}
 </div>
 <div class="actions">
   <button type="submit" name="action" value="dismiss_alert" class="btn danger">Dismiss alert</button>

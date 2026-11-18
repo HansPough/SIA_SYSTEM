@@ -304,6 +304,32 @@ class ApprovalTests(Base):
         self.quote(ref_id)
         return ref_id
 
+    def test_one_ref_per_restock_alert(self):
+        self.make_ref(submit=False)
+        ref = self.be.one("SELECT id, ref_no FROM replenishments")
+        page = self.c.get("/purchasing/alerts/1").get_data(as_text=True)
+        self.assertIn("Open %s" % ref["ref_no"], page)
+        before = self.be.one("SELECT COUNT(*) AS n FROM replenishments")["n"]
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/new", data={
+            "warehouse_id": "1", "remarks": "again", "item_id[]": [str(A)],
+            "qty_requested[]": ["3"], "action": "save_draft", "alert_id": "1"}, follow_redirects=True)
+        self.assertIn("already has", r.get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM replenishments")["n"], before)
+
+    def test_an_approved_po_has_a_send_action_for_the_warehouse_manager(self):
+        ref_id = self.full_quote_ref()
+        self.compare_quote(ref_id)
+        aid = self.be.one("SELECT id FROM purchase_approvals ORDER BY id LIMIT 1")["id"]
+        self.login("owner")
+        self.c.post("/purchasing/approvals/%d" % aid, data={
+            "remarks": "ok", "decision": "approve", "expected_date": "2026-12-01", "terms": "30 days"})
+        self.login("whmgr")
+        po_list = self.c.get("/purchasing/po").get_data(as_text=True)
+        self.assertIn(">Send</a>", po_list)
+        ref = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("Send PO", ref)
+
     def test_choose_a_quotation_sends_it_to_the_owner(self):
         ref_id = self.full_quote_ref()
         r = self.compare_quote(ref_id)
@@ -618,7 +644,7 @@ class SplitOrderingTests(Base):
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
         self.assertIn("Partly ordered", page)
-        self.assertIn("Choose suppliers and send for approval", page)
+        self.assertIn("Choose suppliers", page)
         # later Sup B quotes A
         self.quote(ref_id, SUP_B, lines=[(A, 20, "10.00", 7)])
         r = self.choose(ref_id, **{str(A): "q:%d" % self.qid(SUP_B)})
@@ -878,7 +904,7 @@ class MoreSuppliersTests(Base):
         self.approve()
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
-        self.assertIn("Ask more suppliers (new RFQ)", page)
+        self.assertIn("Ask more suppliers", page)
         form = self.c.get("/purchasing/ref/%d/rfq/new" % ref_id).get_data(as_text=True)
         self.assertIn("Items still without a supplier", form)
         self.assertIn("ANSU", form)                                            # item A
@@ -984,8 +1010,8 @@ class MoreSuppliersTests(Base):
         self.assertEqual((row["qty_dropped"], row["dropped_reason"]), (0, None))
         self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "rfq_sent")       # open again
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
-        self.assertIn("Choose suppliers and send for approval", page)
-        self.assertIn("Ask more suppliers (new RFQ)", page)
+        self.assertIn("Choose suppliers", page)
+        self.assertIn("Ask more suppliers", page)
 
     def test_restore_rules(self):
         ref_id = self.two_item_ref()

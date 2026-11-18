@@ -1,9 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}Receiving Memo {{ rm.rm_no }}{% endblock %}
 {% block content %}
+<div class="doc-split">
+<div class="doc-main">
 {% set d = load_document('RM', rm.id) %}
 {% if d %}{% include 'print/_document_body.html' %}{% endif %}
-<details class="card no-print"><summary>Progress and details</summary>
+</div>
+<aside class="doc-side">
+<details class="card no-print" open><summary>Progress and details</summary>
 <dl class="info">
   <div><dt>RM no.</dt><dd>{{ rm.rm_no }}</dd></div>
   <div><dt>PO no.</dt><dd><a href="{{ url_for('purchasing.po_detail', po_id=rm.po_id) }}">{{ rm.po_no }}</a></dd></div>
@@ -14,20 +18,15 @@
   {% if rm.remarks %}<div><dt>Remarks</dt><dd>{{ rm.remarks }}</dd></div>{% endif %}
 </dl>
 
-<h2>Items</h2>
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">Delivered</th><th class="num">Accepted</th><th class="num">Rejected</th><th>Reason</th></tr></thead>
-<tbody>
-{% for l in rm.lines %}
-<tr><td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small></td>
-<td class="num">{{ l.qty_delivered }}</td><td class="num">{{ l.qty_accepted }}</td>
-<td class="num">{{ l.qty_rejected }}</td><td>{{ l.reject_reason or '–' }}</td></tr>
-{% else %}
-<tr><td colspan="5" class="muted">This memo has no items.</td></tr>
-{% endfor %}
-</tbody>
-</table></div>
+<h2>Lifecycle</h2>
+<ul class="timeline">
+  {% for e in load_lifecycle('RM', rm.id) %}
+  <li><span class="when">{{ e.when }}</span><span class="what">{{ e.what }}</span><span class="who">{{ e.who }}</span></li>
+  {% else %}<li class="muted">No events yet.</li>{% endfor %}
+</ul>
 </details>
+</aside>
+</div>
 <div class="actions">
   {% if rm.discrepancy and current_role == 'warehouse_manager' %}
   <a class="btn secondary" href="{{ url_for('delivery.discrepancy_detail', report_id=rm.discrepancy.id) }}">

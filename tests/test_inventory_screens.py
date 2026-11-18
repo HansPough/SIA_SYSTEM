@@ -209,14 +209,23 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(self.bal(TIRE_A, 2), 10)
         self.assertEqual(self.be.one("SELECT status FROM stock_adjustments")["status"], "rejected")
 
-    def test_nobody_approves_their_own_and_owner_covers_manager_requests(self):
-        adj = self.raise_adjustment("whmgr")
-        r = self.c.get("/inventory/adjustments/%d/review" % adj)
-        self.assertEqual(r.status_code, 302)                                       # own request blocked
-        self.login("owner")
-        r = self.c.post("/inventory/adjustments/%d/review" % adj, data={"decision": "approve", "review_remarks": "ok"})
+    def test_a_manager_stock_count_is_applied_at_once(self):
+        self.login("shopmgr")
+        r = self.c.post("/inventory/count", data={
+            "location": "2", "remarks": "cycle count",
+            "item_id[]": [str(TIRE_A)], "qty_actual[]": ["7"], "item_note[]": ["missing one"]})
         self.assertEqual(r.status_code, 302)
-        self.assertEqual(self.bal(TIRE_A, 1), 8)
+        row = self.be.one("SELECT status, auto_approved FROM stock_adjustments")
+        self.assertEqual((row["status"], row["auto_approved"]), ("approved", 1))
+        self.assertEqual(self.bal(TIRE_A, 2), 7)
+
+    def test_a_manager_entry_is_applied_without_a_second_approval(self):
+        adj = self.raise_adjustment("whmgr")
+        self.assertEqual(self.bal(TIRE_A, 1), 8)                                   # applied in the same save
+        row = self.be.one("SELECT status, reviewed_by FROM stock_adjustments WHERE id = :i", i=adj)
+        self.assertEqual(row["status"], "approved")
+        self.assertIsNotNone(row["reviewed_by"])
+        self.assertEqual(self.c.get("/inventory/adjustments/%d/review" % adj).status_code, 302)
 
     def test_adjustment_input_rules(self):
         self.login("whstaff")
@@ -256,7 +265,7 @@ class ScreenTests(unittest.TestCase):
                 code = self.c.get(url).status_code
                 self.assertIn(code, (200, 403), (who, url))
         self.login("whmgr")
-        self.assertIn("Warehouse adjustments to approve: 1", self.c.get("/").get_data(as_text=True))
+        self.assertIn("1 to approve", self.c.get("/").get_data(as_text=True))
 
 
 if __name__ == "__main__":

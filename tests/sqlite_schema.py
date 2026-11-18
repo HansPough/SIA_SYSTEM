@@ -26,9 +26,11 @@ CREATE TABLE stock_issue_items (id INTEGER PRIMARY KEY AUTOINCREMENT, issue_id I
 CREATE TABLE reservations (id INTEGER PRIMARY KEY AUTOINCREMENT, rf_item_id INTEGER, item_id INTEGER, location_id INTEGER,
   qty INTEGER CHECK (qty > 0), status TEXT, reserved_by INTEGER, reserved_at TEXT, released_at TEXT);
 CREATE TABLE stock_adjustments (id INTEGER PRIMARY KEY AUTOINCREMENT, adj_no TEXT UNIQUE, location_id INTEGER, reason TEXT,
-  status TEXT DEFAULT 'pending', source_ar_id INTEGER, remarks TEXT, requested_by INTEGER NOT NULL, reviewed_by INTEGER,
+  status TEXT DEFAULT 'pending', auto_approved INTEGER DEFAULT 0, source_ar_id INTEGER, remarks TEXT,
+  requested_by INTEGER NOT NULL, reviewed_by INTEGER,
   review_remarks TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, reviewed_at TEXT,
-  CHECK (status = 'pending' OR reviewed_by IS NOT NULL), CHECK (reviewed_by IS NULL OR reviewed_by <> requested_by));
+  CHECK (status = 'pending' OR auto_approved = 1 OR reviewed_by IS NOT NULL),
+  CHECK (reviewed_by IS NULL OR auto_approved = 1 OR reviewed_by <> requested_by));
 CREATE TABLE stock_adjustment_items (id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER, item_id INTEGER,
   qty_system INTEGER, qty_actual INTEGER, item_remarks TEXT, UNIQUE (adjustment_id, item_id));
 CREATE TABLE notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, notif_type TEXT CHECK (notif_type IN ('low_stock','restock')),

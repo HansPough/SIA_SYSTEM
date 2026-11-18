@@ -20,12 +20,12 @@
 {% for r in res.rows %}
 <tr><td>{{ r.supplier_name }}</td><td>{{ r.contact_person or '–' }}</td><td>{{ r.email or '–' }}</td>
 <td>{{ r.phone or '–' }}</td>
-<td>{{ 'Yes' if r.is_regular else 'No' }}</td>
-<td>{{ 'Yes' if r.is_active else 'No' }}</td>
+<td>{% if r.is_regular %}<span class="badge s-info">Regular</span>{% else %}<span class="badge s-neutral">No</span>{% endif %}</td>
+<td>{{ m.status('active' if r.is_active else 'inactive') }}</td>
 <td class="num">{{ r.n_prices }}</td>
 <td>{% if current_role in ['warehouse_manager', 'owner'] %}<a class="btn small" href="{{ url_for('purchasing.supplier_edit', supplier_id=r.id) }}">Open</a>{% endif %}</td></tr>
 {% else %}
-<tr><td colspan="8" class="muted">No suppliers yet. Add one before sending an RFQ.</td></tr>
+<tr><td colspan="8" class="muted">No suppliers yet.</td></tr>
 {% endfor %}
 </tbody>
 </table></div>

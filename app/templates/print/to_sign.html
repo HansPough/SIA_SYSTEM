@@ -2,14 +2,14 @@
 {% block title %}Documents to sign{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Documents to sign</h1><span class="badge">{{ rows|length }}</span></div>
-<p class="note">Open each one, check it, and press <strong>Sign</strong>.</p>
+<p class="note">Open each one and press <strong>Sign</strong>.</p>
 <div class="card">
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Document</th><th>No.</th><th>Date</th><th>Your line</th><th></th></tr></thead>
 <tbody>
 {% for r in rows %}
 <tr><td>{{ r.title }}</td><td class="nowrap">{{ r.doc_no }}</td><td>{{ r.doc_date }}</td><td>{{ r.line }}</td>
-<td><a class="btn small primary" href="{{ url_for('documents.view', doc_type=r.doc_type, doc_id=r.id) }}">Open and sign</a></td></tr>
+<td><a class="btn small primary" href="{{ url_for('documents.view', doc_type=r.doc_type, doc_id=r.id) }}">Open</a></td></tr>
 {% else %}
 <tr><td colspan="5" class="muted">Nothing is waiting for your signature.</td></tr>
 {% endfor %}

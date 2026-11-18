@@ -2,10 +2,10 @@
 {% block title %}Server error{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>Internal Server Error</h1>
-  <p>The page could not be completed. The error has been written to <code>instance/error.log</code>.</p>
-  <p class="muted">If this is a new installation or after an update, run <code>python scripts/check_setup.py</code>
-  in the project folder and restart <code>python run.py</code>.</p>
+  <h1>Something went wrong</h1>
+  <p>The error was written to <code>instance/error.log</code>.</p>
+  <p class="muted">After an update, run <code>python scripts/check_setup.py</code> and restart
+  <code>python run.py</code>.</p>
   <div class="actions">
     <a class="btn primary" href="{{ url_for('dashboard.index') }}">Back to dashboard</a>
     <a class="btn ghost" href="{{ url_for('auth.login') }}">Log in again</a>

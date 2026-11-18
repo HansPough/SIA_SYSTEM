@@ -1,26 +1,25 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Receive Delivery {{ ts.ts_no }}{% endblock %}
+{% block title %}Receive delivery {{ ts.ts_no }}{% endblock %}
 {% block content %}
 {% set accepted_vals = f.getlist('qty_accepted[]') %}
 {% set rejected_vals = f.getlist('qty_rejected[]') %}
 {% set reason_vals = f.getlist('variance_reason[]') %}
-<div class="page-head"><h1>Receive Delivery (AR)</h1><span class="badge warn">In transit</span></div>
+<div class="page-head"><h1>Receive delivery</h1>{{ m.status('in_transit', label='In transit') }}</div>
 <div class="card">
   <h2 style="margin-top:0">1. Check the TS</h2>
   <dl class="info">
     <div><dt>TS no.</dt><dd>{{ ts.ts_no }}</dd></div>
     <div><dt>Released by</dt><dd>{% if released_sig %}{{ released_sig.signer_name }} &middot; {{ (released_sig.signed_at|string)[:16] }}{% else %}–{% endif %}</dd></div>
-    <div><dt>Driver</dt><dd>{{ ts.driver_name or '–' }}{% if driver_sig %} <span class="badge">signed</span>{% elif ts.driver_paper_reason %} <span class="badge warn">paper: {{ ts.driver_paper_reason }}</span>{% endif %}</dd></div>
+    <div><dt>Driver</dt><dd>{{ ts.driver_name or '–' }}{% if driver_sig %} {{ m.status('signed') }}{% elif ts.driver_paper_reason %} <span class="badge s-warn">paper: {{ ts.driver_paper_reason }}</span>{% endif %}</dd></div>
     <div><dt>Vehicle</dt><dd>{{ ts.vehicle_plate or '–' }}</dd></div>
   </dl>
-  <p class="note" style="margin-bottom:0">Compare the delivery with the lines below. Count the items, tick <strong>Counted</strong> on each line, and
-  enter anything that is rejected or short. You cannot sign until every line is counted.</p>
+  <p class="note" style="margin-bottom:0">Count each line and tick <strong>Counted</strong>. Enter anything rejected or short.</p>
 </div>
-<p class="note">Accepted + rejected = qty on the TS. Only accepted units go into shop stock.</p>
+<p class="note">Accepted + rejected = qty on the TS.</p>
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('AR no.', 'ar_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('AR no.', 'ar_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}
   {{ m.field('From', 'from_location', 'text', value=ts.from_code, readonly=True) }}
   {{ m.field('Driver / vehicle', 'driver_vehicle', 'text',
@@ -52,7 +51,7 @@
 </table></div>
 
 <h2>3. Sign</h2>
-{{ m.signing_box('Pressing the button signs the acknowledgment receipt and the TS, and adds the accepted quantity to your shop stock.') }}
+{{ m.signing_box('Signs the receipt and the TS, and adds accepted units to shop stock.') }}
 <div class="actions">
   <button type="submit" name="action" value="sign_ar" class="btn primary">Sign &amp; confirm receipt</button>
   <a class="btn ghost" href="{{ url_for('delivery.delivery_list') }}">Back</a>

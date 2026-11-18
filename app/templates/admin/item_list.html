@@ -15,7 +15,7 @@
 <thead><tr><th>Code</th><th>Item name</th><th>Brand</th><th>Model</th><th>Size</th><th>Ply</th><th>Pattern</th><th>Category</th><th class="num">In stock</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {% for r in res.rows %}
-<tr><td class="nowrap">{{ r.item_code }}</td><td>{{ r.item_name }}</td><td>{{ r.brand }}</td><td>{{ r.model or '–' }}</td><td>{{ r.size or '–' }}</td><td>{{ r.ply_rating or '–' }}</td><td>{{ r.pattern or '–' }}</td><td>{{ r.category|capitalize }}</td><td class="num">{{ r.on_hand }}</td><td><span class="badge {{ '' if r.is_active else 'warn' }}">{{ 'Active' if r.is_active else 'Inactive' }}</span></td>
+<tr><td class="nowrap">{{ r.item_code }}</td><td>{{ r.item_name }}</td><td>{{ r.brand }}</td><td>{{ r.model or '–' }}</td><td>{{ r.size or '–' }}</td><td>{{ r.ply_rating or '–' }}</td><td>{{ r.pattern or '–' }}</td><td>{{ r.category|capitalize }}</td><td class="num">{{ r.on_hand }}</td><td>{{ m.status('active' if r.is_active else 'inactive') }}</td>
 <td>{% if current_role == 'owner' %}<a class="btn small" href="{{ url_for('admin.item_edit', item_id=r.id) }}">Edit</a>{% endif %}<a class="btn small" href="{{ url_for('inventory.stock_detail', item_id=r.id) }}">Stock</a></td></tr>
 {% else %}<tr><td colspan="11" class="muted">No items found.</td></tr>{% endfor %}
 </tbody>

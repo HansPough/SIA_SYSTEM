@@ -79,9 +79,156 @@ document.addEventListener("click", function (e) {
   var rem = e.target.closest("[data-remove-row]");
   if (rem) {
     var tb = rem.closest("tbody");
-    if (tb.querySelectorAll(".line-row").length > 1) { rem.closest("tr").remove(); }
+    var allowEmpty = tb.closest("table") && tb.closest("table").hasAttribute("data-allow-empty");
+    if (allowEmpty || tb.querySelectorAll(".line-row").length > 1) {
+      rem.closest("tr").remove();
+      var empty = tb.querySelector("[data-empty-row]");
+      if (empty) { empty.hidden = !!tb.querySelector(".line-row"); }
+    }
   }
 });
+
+// ---- Search + Add rows (stock count and stock adjustments) ----------------
+// The full item list is too long to show, so the user searches for the item
+// they counted or adjusted and adds only that row.
+(function () {
+  var matches = {};
+  function items() {
+    var node = document.getElementById("item-data");
+    if (!node) { return []; }
+    try { return JSON.parse(node.textContent || "[]"); } catch (e) { return []; }
+  }
+  function label(item) { return item.item_code + " \u2014 " + item.item_name; }
+  function findItem(value, rows) {
+    var q = String(value || "").trim().toLowerCase();
+    if (!q) { return null; }
+    var exact = rows.filter(function (i) { return label(i).toLowerCase() === q; });
+    if (exact.length === 1) { return exact[0]; }
+    var part = rows.filter(function (i) {
+      return (i.item_code + " " + i.item_name).toLowerCase().indexOf(q) > -1;
+    });
+    if (part.length === 1) { return part[0]; }
+    if (part.length > 1) { return { ambiguous: true }; }
+    return null;
+  }
+  function hideResults(kind) {
+    var box = document.getElementById(kind + "-results");
+    if (box) { box.hidden = true; box.innerHTML = ""; }
+    matches[kind] = [];
+  }
+  function hideAllResults() {
+    Object.keys(matches).forEach(hideResults);
+    document.querySelectorAll(".picker-results").forEach(function (box) { box.hidden = true; });
+  }
+  function renderResults(kind, value) {
+    var box = document.getElementById(kind + "-results");
+    if (!box) { return; }
+    var q = String(value || "").trim().toLowerCase();
+    if (!q) { hideResults(kind); return; }
+    var rows = items().filter(function (i) {
+      return (i.item_code + " " + i.item_name).toLowerCase().indexOf(q) > -1;
+    }).slice(0, 8);
+    matches[kind] = rows;
+    box.innerHTML = "";
+    if (!rows.length) {
+      var none = document.createElement("div");
+      none.className = "picker-none";
+      none.textContent = "No item matches.";
+      box.appendChild(none);
+    } else {
+      rows.forEach(function (item) {
+        var option = document.createElement("button");
+        option.type = "button";
+        option.className = "picker-item";
+        option.setAttribute("data-pick-item", kind);
+        option.setAttribute("data-id", item.id);
+        var code = document.createElement("span");
+        code.className = "picker-code";
+        code.textContent = item.item_code;
+        var name = document.createElement("span");
+        name.textContent = item.item_name;
+        option.appendChild(code);
+        option.appendChild(name);
+        box.appendChild(option);
+      });
+    }
+    box.hidden = false;
+  }
+  function addRow(kind, item, hint) {
+    var tbody = document.getElementById(kind + "-lines");
+    var template = document.getElementById(kind + "-row-template");
+    if (!tbody || !template) { return; }
+    var already = false;
+    tbody.querySelectorAll('input[name="item_id[]"]').forEach(function (input) {
+      if (input.value === String(item.id)) { already = true; }
+    });
+    if (already) { hint.textContent = "Already added."; return; }
+    var row = template.content.firstElementChild.cloneNode(true);
+    row.querySelector("[data-name]").textContent = item.item_name;
+    row.querySelector("[data-code]").textContent = item.item_code;
+    row.querySelector('input[name="item_id[]"]').value = item.id;
+    var onhand = row.querySelector("[data-onhand]");
+    if (onhand) { onhand.textContent = item.on_hand; }
+    var system = row.querySelector("[data-system]");
+    if (system) { system.textContent = item.on_hand; }
+    var hiddenSystem = row.querySelector('input[name="qty_system[]"]');
+    if (hiddenSystem) { hiddenSystem.value = item.on_hand; }
+    var actual = row.querySelector('input[name="qty_actual[]"]');
+    if (actual) { actual.value = item.on_hand; }
+    var empty = tbody.querySelector("[data-empty-row]");
+    if (empty) { empty.hidden = true; }
+    tbody.appendChild(row);
+    hint.textContent = "";
+    if (kind === "adjust" && typeof updateDiff === "function") { updateDiff(row); }
+    if (actual) { actual.focus(); actual.select(); }
+  }
+  function addItem(kind, item) {
+    var input = document.getElementById(kind + "-search");
+    var hint = document.getElementById(kind + "-hint");
+    if (!item || !input || !hint) { return; }
+    addRow(kind, item, hint);
+    input.value = "";
+    hideResults(kind);
+    input.focus();
+  }
+  document.addEventListener("input", function (e) {
+    var input = e.target.closest("[data-item-search]");
+    if (!input) { return; }
+    renderResults(input.getAttribute("data-item-search"), input.value);
+  });
+  document.addEventListener("click", function (e) {
+    var pick = e.target.closest("[data-pick-item]");
+    if (pick) {
+      var pickKind = pick.getAttribute("data-pick-item");
+      var picked = items().filter(function (i) { return String(i.id) === pick.getAttribute("data-id"); })[0];
+      addItem(pickKind, picked);
+      return;
+    }
+    var button = e.target.closest("[data-add-item]");
+    if (button) {
+      var kind = button.getAttribute("data-add-item");
+      var input = document.getElementById(kind + "-search");
+      var hint = document.getElementById(kind + "-hint");
+      var found = findItem(input.value, items());
+      if (!found && matches[kind] && matches[kind].length === 1) { found = matches[kind][0]; }
+      if (!found) { hint.textContent = "Pick an item from the list."; return; }
+      if (found.ambiguous) { hint.textContent = "Several items match. Pick one from the list."; return; }
+      addItem(kind, found);
+      return;
+    }
+    if (!e.target.closest(".picker")) { hideAllResults(); }
+  });
+  document.addEventListener("keydown", function (e) {
+    var input = e.target.closest("[data-item-search]");
+    if (!input) { return; }
+    var kind = input.getAttribute("data-item-search");
+    if (e.key === "Escape") { hideResults(kind); return; }
+    if (e.key !== "Enter") { return; }
+    e.preventDefault();
+    var found = matches[kind] && matches[kind].length ? matches[kind][0] : findItem(input.value, items());
+    if (found) { addItem(kind, found); }
+  });
+})();
 
 // Display helpers for the item tables (no business rules here, the server checks everything).
 document.addEventListener("change", function (e) {

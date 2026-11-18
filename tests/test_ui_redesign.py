@@ -173,12 +173,12 @@ class SnoozeTests(Base):
         html = page(self.c.get("/purchasing/alerts/%d" % aid))
         self.assertIn("Wake now", html)
         self.assertIn("It stays open", html)
-        self.assertIn("Create REF from this alert", html)                  # still actionable while snoozed
+        self.assertIn("Create REF", html)                                 # still actionable while snoozed
 
     def test_dashboard_counts_ignore_snoozed_alerts(self):
         aid = self.make_alert("low_stock", SHOP)
         self.login("shopmgr")
-        self.assertRegex(page(self.c.get("/")), r"Active alerts?:?\s*1|alerts[^<]*1")
+        self.assertRegex(page(self.c.get("/")), r"1 active alert|Active alerts?:?\s*1")
         self.c.post("/requisition/alerts/%d/snooze" % aid, data={"days": "3"})
         from app import dashboard_ops
         with self.app.app_context():
@@ -255,14 +255,14 @@ class MenuStructureTests(Base):
         self.assertNotIn("Drivers", delivery); self.assertNotIn("Vehicles", delivery)
         self.assertNotIn("Suppliers", self.group_items(html, "Purchasing"))
         self.assertEqual(self.group_items(html, "Purchasing"),
-                         ["Restock alerts", "Replenishment forms (REF)", "Purchase orders (PO)"])
+                         ["Restock alerts", "Replenishments (REF)", "Purchase orders (PO)"])
 
     def test_suppliers_sit_under_administration_for_the_owner(self):
         self.login("owner")
         html = page(self.c.get("/"))
         self.assertIn("Suppliers", self.group_items(html, "Administration"))
         self.assertNotIn("Suppliers", self.group_items(html, "Purchasing"))
-        self.assertEqual(self.group_items(html, "Purchasing"), ["Replenishment forms (REF)", "Purchase orders (PO)"])
+        self.assertEqual(self.group_items(html, "Purchasing"), ["Replenishments (REF)", "Purchase orders (PO)"])
 
     def test_every_menu_item_still_opens_for_every_role(self):
         from app.roles import MENU
@@ -435,6 +435,124 @@ class ButtonsAndTablesTests(Base):
         html = page(self.c.get("/"))
         self.assertIn("3T TIRE SUPPLY", html)
         self.assertNotIn("TIER", html)
+
+
+class StatusColourTests(Base):
+    """One status tone everywhere: ok / warn / danger / info / neutral."""
+
+    def test_the_tone_map_covers_every_status_in_the_database(self):
+        from app.statuses import tone
+        for value, expected in (
+                ("active", "ok"), ("approved", "ok"), ("completed", "ok"), ("received", "ok"),
+                ("pending", "warn"), ("partially_received", "warn"), ("in_transit", "warn"),
+                ("void_requested", "warn"), ("cancelled", "danger"), ("rejected", "danger"),
+                ("draft", "neutral"), ("inactive", "neutral"), ("sent", "info"), ("Partially received", "warn"),
+                ("Delivered with variance", "warn"), ("something unknown", "neutral")):
+            self.assertEqual(tone(value), expected, value)
+
+    def test_list_pages_render_coloured_status_badges(self):
+        self.login("shopmgr")
+        html = page(self.c.get("/inventory/stock"))
+        self.assertRegex(html, r'<span class="badge s-(ok|warn|danger)">')
+
+    def test_document_status_uses_the_same_badge(self):
+        self.chain()
+        self.login("owner")
+        html = page(self.c.get("/documents/PO/1"))
+        self.assertRegex(html, r'<div class="doc-status">\s*<span class="badge s-(ok|warn|danger|info|neutral)">')
+
+    def test_an_active_alert_is_amber_even_though_items_are_green_when_active(self):
+        self.be.execute("INSERT INTO notifications (notif_type, location_id, status) "
+                        "VALUES ('low_stock', :l, 'active')", l=SHOP)
+        self.be.commit()
+        self.login("shopmgr")
+        html = page(self.c.get("/requisition/alerts"))
+        self.assertIn('class="badge s-warn">Active', html)
+        self.login("owner")
+        self.assertIn('class="badge s-ok">Active', page(self.c.get("/admin/items")))
+
+
+class NewWorkflowTests(Base):
+    """Small flow fixes: real document numbers, stock shortcuts, AR preview."""
+
+    def test_new_documents_show_the_next_number_instead_of_auto(self):
+        self.login("shopmgr")
+        rf = page(self.c.get("/requisition/rf/new"))
+        self.assertIn("RF-2026-0001", rf)
+        self.assertNotIn('value="auto"', rf)
+        self.login("whmgr")
+        ref = page(self.c.get("/purchasing/ref/new"))
+        self.assertIn("REF-2026-0001", ref)
+        self.assertNotIn('value="auto"', ref)
+
+    def test_stock_screen_offers_count_and_adjustment(self):
+        self.login("shopmgr")
+        html = page(self.c.get("/inventory/stock"))
+        self.assertIn('href="/inventory/count"', html)
+        self.assertIn('href="/inventory/adjustments/new"', html)
+
+    def test_stock_count_and_adjustment_add_rows_by_search(self):
+        self.login("shopmgr")
+        for path, kind in (("/inventory/count", "count"), ("/inventory/adjustments/new", "adjust")):
+            html = page(self.c.get(path))
+            self.assertIn('data-add-item="%s"' % kind, html, path)
+            self.assertIn('%s-row-template' % kind, html, path)
+            self.assertIn('data-allow-empty', html, path)
+            self.assertIn('id="%s-search"' % kind, html, path)
+
+    def test_progress_and_details_include_the_lifecycle(self):
+        self.chain()
+        self.login("whmgr")
+        html = page(self.c.get("/delivery/transfers/1"))
+        self.assertIn("Progress and details", html)
+        self.assertIn("Lifecycle", html)
+        self.assertIn("Created", html)
+        self.assertIn("Signed (Warehouse Manager)", html)
+
+    def test_delivered_transfer_offers_the_acknowledgment_receipt_preview(self):
+        self.chain()
+        self.receive()
+        self.login("shopmgr")
+        html = page(self.c.get("/delivery/deliveries"))
+        self.assertIn("/documents/AR/1", html)
+
+
+class LiveUpdateTests(Base):
+    """The /api/live payload behind the bell and the automatic refresh."""
+
+    def live(self):
+        return self.c.get("/api/live")
+
+    def test_live_state_requires_a_login(self):
+        self.assertEqual(self.live().status_code, 401)
+
+    def test_live_state_has_counts_the_bell_and_sidebar_need(self):
+        self.receive_po()                       # a memo the manager must sign
+        self.login("whmgr")
+        data = self.live().get_json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["rev"])
+        self.assertGreaterEqual(data["total"], 1)
+        self.assertIn("Documents to sign", [row["label"] for row in data["attention"]])
+        groups = {g["label"]: g for g in data["groups"]}
+        self.assertIn("To do", groups)
+        self.assertTrue(any(i["url"] == "/documents/to-sign" for i in groups["To do"]["items"]))
+
+    def test_revision_changes_when_another_user_saves_work(self):
+        self.login("whmgr")
+        before = self.live().get_json()["rev"]
+        self.receive_po()
+        self.login("whmgr")
+        after = self.live().get_json()["rev"]
+        self.assertNotEqual(before, after)
+
+    def test_pages_that_can_refresh_themselves_and_pages_that_cannot(self):
+        self.login("whmgr")
+        self.assertIn('data-live="1"', page(self.c.get("/delivery/transfers")))
+        self.assertIn("/static/js/live.js", page(self.c.get("/")))
+        self.login("shopmgr")
+        self.assertIn('data-live="0"', page(self.c.get("/inventory/adjustments/new")))
+        self.assertIn('data-live="0"', page(self.c.get("/inventory/issues/new")))
 
 
 if __name__ == "__main__":

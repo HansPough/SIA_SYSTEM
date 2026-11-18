@@ -8,8 +8,8 @@
 {% set lead_vals = f.getlist('lead_time_days[]') %}
 {% set qdate = f.get('quotation_date') or ((data.existing.quotation_date|string)[:10] if data.existing else data.today) %}
 {% set vdate = f.get('valid_until') or ((data.existing.valid_until|string)[:10] if data.existing and data.existing.valid_until else '') %}
-<div class="page-head"><h1>Record Quotation</h1><span class="badge">REF {{ data.ref.ref_no }}</span></div>
-<p class="note">Enter the supplier's reply. Saving a supplier again replaces its quotation.</p>
+<div class="page-head"><h1>Record quotation</h1><span class="badge">{{ data.ref.ref_no }}</span></div>
+<p class="note">Enter the supplier's reply. Saving again replaces it.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RFQ no.', 'rfq_no', 'text', value=data.rfq.rfq_no, readonly=True) }}
@@ -53,8 +53,7 @@
 {% endfor %}
 </tbody>
 </table></div>
-<p class="muted">Leave a line's quantity at 0 if the supplier did not offer that item. Changing the supplier reloads
-the price boxes from that supplier's agreed prices.</p>
+<p class="muted">Leave the quantity at 0 if the supplier did not offer the item.</p>
 
 <div class="actions">
   <button type="submit" name="action" value="save_quotation" class="btn primary">Save quotation</button>

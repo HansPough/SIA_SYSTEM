@@ -14,7 +14,7 @@
 {% for r in res.rows %}
 <tr><td><strong>{{ r.username }}</strong></td><td>{{ r.full_name }}</td>
 <td>{{ r.role_name }}</td><td>{{ r.location_code or '–' }}</td><td>{{ r.email or '–' }}</td>
-<td><span class="badge {{ '' if r.is_active else 'warn' }}">{{ 'Active' if r.is_active else 'Inactive' }}</span></td>
+<td>{{ m.status('active' if r.is_active else 'inactive') }}</td>
 <td><a class="btn small" href="{{ url_for('admin.user_edit', user_id=r.id) }}">Open</a></td></tr>
 {% else %}
 <tr><td colspan="7" class="muted">No users found.</td></tr>

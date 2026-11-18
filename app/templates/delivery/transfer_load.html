@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Loading Check {{ ts.ts_no }}{% endblock %}
+{% import '_macros.html' as m %}
+{% block title %}Load transfer {{ ts.ts_no }}{% endblock %}
 {% block content %}
-<div class="page-head no-print"><h1>Loading Check</h1><span class="badge warn">Assigned</span></div>
-<p class="note no-print">Tick each line after counting. All lines are needed before release.</p>
+<div class="page-head no-print"><h1>Load transfer</h1>{{ m.status('assigned') }}</div>
+<p class="note no-print">Tick each line after counting.</p>
 {% include 'print/_document_body.html' %}
 <form method="post" class="card no-print">
 
@@ -19,7 +20,7 @@
 </table></div>
 
 <div class="actions">
-  <button type="submit" name="action" value="confirm_items_loaded" class="btn primary">Confirm items loaded</button>
+  <button type="submit" name="action" value="confirm_items_loaded" class="btn primary">Confirm loaded</button>
   <a class="btn ghost" href="{{ url_for('delivery.transfer_detail', ts_id=ts.id) }}">Back</a>
 </div>
 </form>

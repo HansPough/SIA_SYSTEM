@@ -1,16 +1,16 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Record Sale / Stock Issue{% endblock %}
+{% block title %}Record sale{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Record Sale / Stock Issue</h1><span class="badge">New</span></div>
-<p class="note">A simple stock-out record. No prices. Stock cannot go below zero, and reserved stock cannot be sold.</p>
+<div class="page-head"><h1>Record sale</h1>{{ m.status('new') }}</div>
+<p class="note">Stock out. No prices. Reserved stock cannot be sold.</p>
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('Issue no.', 'issue_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('Issue no.', 'issue_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('Date', 'issue_date', 'date', value=f.get('issue_date', ''), required=True) }}
   {{ m.field('Location', 'location', 'text', value=location.code ~ ' (' ~ location.loc_type ~ ')', readonly=True) }}
-  {{ m.field('Customer name (optional)', 'customer_name', 'text', value=f.get('customer_name', ''), help='for example: walk-in customer') }}
-  {{ m.field('E-invoice no.', 'document_ref', 'text', value=f.get('document_ref', ''), required=True, help='one number per sale, never reused') }}
+  {{ m.field('Customer name (optional)', 'customer_name', 'text', value=f.get('customer_name', ''), help='walk-in customer') }}
+  {{ m.field('E-invoice no.', 'document_ref', 'text', value=f.get('document_ref', ''), required=True, help='one per sale, never reused') }}
   <div class="field span-1"><label for="reason">Reason<span class="req">*</span></label>
     <select id="reason" name="reason"><option value="">-- select --</option><option value="sale" {{ 'selected' if f.get('reason') == 'sale' }}>Sale</option><option value="other" {{ 'selected' if f.get('reason') == 'other' }}>Other</option></select></div>
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}

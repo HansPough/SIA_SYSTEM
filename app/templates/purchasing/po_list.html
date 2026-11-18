@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Purchase Orders (PO){% endblock %}
+{% block title %}Purchase orders{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Purchase Orders (PO)</h1></div>
+<div class="page-head"><h1>Purchase orders</h1></div>
 <div class="card">
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search PO no., supplier or REF...">
@@ -17,10 +17,11 @@
 <thead><tr><th>PO no.</th><th>Date</th><th>Supplier</th><th>REF no.</th><th class="num">Total</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {% for r in res.rows %}
-<tr><td class="nowrap">{{ r.po_no }}</td><td>{{ (r.po_date|string)[:10] }}</td><td>{{ r.supplier_name }}</td>
+<tr><td class="nowrap">{{ r.po_no }}</td><td class="nowrap">{{ (r.po_date|string)[:10] }}</td><td>{{ r.supplier_name }}</td>
 <td class="nowrap">{{ r.ref_no }}</td><td class="num">{{ r.total_amount|money }}</td>
-<td><span class="badge {{ 'warn' if r.status == 'draft' }}">{{ r.status|po_status }}</span></td>
-<td><a class="btn small" href="{{ url_for('purchasing.po_detail', po_id=r.id) }}">Open</a></td></tr>
+<td>{{ m.status(r.status|po_status) }}</td>
+<td>{% if r.status == 'draft' and current_role == 'warehouse_manager' %}<a class="btn small primary" href="{{ url_for('purchasing.po_detail', po_id=r.id) }}">Send</a>
+{% else %}<a class="btn small" href="{{ url_for('purchasing.po_detail', po_id=r.id) }}">Open</a>{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="7" class="muted">No purchase orders yet. One is created when the owner approves a supplier and price.</td></tr>
 {% endfor %}

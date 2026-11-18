@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Edit Item{% endblock %}
+{% block title %}Edit item{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Edit Item</h1><span class="badge">{{ item.item_code }}</span></div>
+<div class="page-head"><h1>Edit item</h1><span class="badge">{{ item.item_code }}</span></div>
 <form method="post" class="card">
 {% include 'admin/_item_form.html' %}
 <div class="grid">
-  {{ m.field('Item code', 'item_code', 'text', value=item.item_code, readonly=True, help='The code never changes, it is on every record') }}
-  {{ m.field('Active', 'is_active', 'checkbox', value=f.get('is_active'), help='Untick to hide it. Needs zero stock (now: ' ~ on_hand ~ ')') }}
+  {{ m.field('Item code', 'item_code', 'text', value=item.item_code, readonly=True, help='never changes') }}
+  {{ m.field('Active', 'is_active', 'checkbox', value=f.get('is_active'), help='needs zero stock (now: ' ~ on_hand ~ ')') }}
 </div>
 <div class="actions">
   <button type="submit" name="action" value="save_item" class="btn primary">Save item</button>

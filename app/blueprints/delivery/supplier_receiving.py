@@ -43,7 +43,7 @@ def receiving_check(po_id):
         return redirect(url_for("dashboard.index"))
     po = dop.receiving_form(po_id, loc)
     if po is None:
-        flash("That purchase order is not waiting for a delivery at your warehouse.", "error")
+        flash("That PO is not waiting at your warehouse.", "error")
         return redirect(url_for("delivery.receiving_list"))
     if request.method == "POST":
         try:
@@ -66,14 +66,15 @@ def receiving_check(po_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            msg = "%s saved. The accepted quantity was added to warehouse stock." % rm_no
+            msg = "%s saved. Accepted units added to warehouse stock." % rm_no
             if dr_no:
-                msg += " Discrepancy report %s was opened." % dr_no
+                msg += " Discrepancy %s opened." % dr_no
             if resolved_drs:
-                msg += " Discrepancy report(s) %s resolved automatically." % ", ".join(resolved_drs)
+                msg += " Discrepancy %s resolved." % ", ".join(resolved_drs)
             flash(msg, "success")
             return redirect(url_for("delivery.receiving_detail", rm_id=rm_id))
-    return render_template("delivery/receiving_check.html", po=po, f=request.form)
+    return render_template("delivery/receiving_check.html", po=po, f=request.form,
+                           next_no=inv.peek_doc_no("RM"))
 
 
 @bp.route("/receiving/rm/<int:rm_id>")

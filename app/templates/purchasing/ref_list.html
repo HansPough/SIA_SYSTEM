@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Replenishment Forms (REF){% endblock %}
+{% block title %}Replenishments (REF){% endblock %}
 {% block content %}
-<div class="page-head"><h1>Replenishment Forms (REF)</h1>
+<div class="page-head"><h1>Replenishments (REF)</h1>
   {% if current_role == 'warehouse_manager' %}<a class="btn primary" href="{{ url_for('purchasing.ref_new') }}">+ New REF</a>{% endif %}
 </div>
 <div class="card">
@@ -20,9 +20,9 @@
 <thead><tr><th>REF no.</th><th>Date</th><th>Warehouse</th><th class="num">Items</th><th>Supplier</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {% for r in res.rows %}
-<tr><td class="nowrap">{{ r.ref_no }}</td><td>{{ ((r.submitted_at or r.created_at)|string)[:10] }}</td>
+<tr><td class="nowrap">{{ r.ref_no }}</td><td class="nowrap">{{ ((r.submitted_at or r.created_at)|string)[:10] }}</td>
 <td>{{ r.warehouse }}</td><td class="num">{{ r.n_items }}</td><td>{{ r.supplier or '–' }}</td>
-<td><span class="badge {{ 'warn' if r.status in ['draft', 'submitted', 'rfq_sent', 'for_approval'] }}">{{ r.status|replace('_', ' ')|capitalize }}</span></td>
+<td>{{ m.status(r.status) }}</td>
 <td><a class="btn small" href="{{ url_for('purchasing.ref_detail', ref_id=r.id) }}">Open</a></td></tr>
 {% else %}
 <tr><td colspan="7" class="muted">No replenishment forms yet.</td></tr>

@@ -172,6 +172,16 @@ def rf_form_data(shop_id):
     return {"shop": shop, "warehouses": list_warehouses(shop_id), "stock_items": items}
 
 
+def rf_for_alert(alert_id):
+    """The RF already raised from this low-stock alert, if any (cancelled ones do not count)."""
+    if not alert_id:
+        return None
+    return _b().one(
+        "SELECT id, rf_no, status FROM requisitions "
+        "WHERE notification_id = :n AND status <> 'cancelled' ORDER BY id DESC LIMIT 1",
+        n=alert_id)
+
+
 def create_rf(user, shop_id, warehouse_id, remarks, pairs, submit, alert_id=None):
     """Save the RF header and lines. Returns (rf_id, rf_no, status).
 
@@ -205,6 +215,11 @@ def create_rf(user, shop_id, warehouse_id, remarks, pairs, submit, alert_id=None
         lines[iid] = lines.get(iid, 0) + q
     if not lines:
         raise InventoryError("Add at least one item to the requisition.")
+
+    if alert_id:
+        existing = rf_for_alert(alert_id)
+        if existing:
+            raise InventoryError("A requisition already exists for this alert: %s." % existing["rf_no"])
 
     remarks = (remarks or "").strip()
     if len(remarks) > 500:

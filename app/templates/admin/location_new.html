@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}New Location{% endblock %}
+{% block title %}New location{% endblock %}
 {% block content %}
-<div class="page-head"><h1>New Location</h1></div>
-<p class="note">Add a warehouse before warehouse staff, a shop before shop staff.</p>
+<div class="page-head"><h1>New location</h1></div>
+<p class="note">Add the location before its staff.</p>
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('Code', 'code', 'text', value=f.get('code', ''), required=True, help='Short code used on documents, e.g. WH, SHOP2.') }}
+  {{ m.field('Code', 'code', 'text', value=f.get('code', ''), required=True, help='short code, e.g. WH or SHOP2') }}
   {{ m.field('Name', 'name', 'text', value=f.get('name', ''), required=True) }}
   <div class="field span-1"><label for="loc_type">Type<span class="req">*</span></label>
     <select id="loc_type" name="loc_type" required>

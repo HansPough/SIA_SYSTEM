@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}New Replenishment Form{% endblock %}
+{% block title %}New replenishment{% endblock %}
 {% block content %}
 {% macro item_row(template=False) %}
 <tr class="line-row" {% if template %}data-row-template hidden{% endif %}>
@@ -16,16 +16,16 @@
 </tr>
 {% endmacro %}
 
-<div class="page-head"><h1>New Replenishment Form</h1><span class="badge">Draft</span></div>
+<div class="page-head"><h1>New replenishment</h1>{{ m.status('draft') }}</div>
 {% if alert %}
-<p class="note">From alert {{ alert.alert_no }}. Submitting completes the alert.</p>
+<p class="note">From alert {{ alert.alert_no }}. Submitting completes it.</p>
 {% else %}
-<p class="note">Order stock for the warehouse. The owner approves the supplier and price before a PO is made.</p>
+<p class="note">Order stock for the warehouse. The owner approves the price first.</p>
 {% endif %}
 <form method="post" class="card">
 <input type="hidden" name="alert_id" value="{{ alert.id if alert else '' }}">
 <div class="grid">
-  {{ m.field('REF no.', 'ref_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('REF no.', 'ref_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('Warehouse', 'warehouse', 'text', value=data.warehouse.code ~ ' — ' ~ data.warehouse.name, readonly=True) }}
   {{ m.field('Created by', 'created_by', 'text', value=created_by, readonly=True) }}
   {{ m.field('From alert', 'alert_no', 'text', value=(alert.alert_no if alert else ''), readonly=True) }}
@@ -58,10 +58,10 @@
 </table></div>
 <button type="button" class="btn small" data-add-row="lines">+ Add item</button>
 
-{{ m.signing_box("Sign & submit signs the replenishment form and sends it for approval. Save draft does not sign.") }}
+{{ m.signing_box("Sign & submit sends this form for approval. Save draft does not.") }}
 <div class="actions">
   <button type="submit" name="action" value="save_draft" class="btn secondary">Save draft</button>
-  <button type="submit" name="action" value="submit_ref" class="btn primary">Sign &amp; submit REF</button>
+  <button type="submit" name="action" value="submit_ref" class="btn primary">Sign &amp; submit</button>
   <a class="btn ghost" href="{{ url_for('purchasing.ref_list') }}">Back</a>
 </div>
 </form>

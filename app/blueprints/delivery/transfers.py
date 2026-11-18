@@ -44,8 +44,8 @@ def transfer_new():
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s prepared%s." % (ts_no, " and assigned. Warehouse staff can do the loading check"
-                                      if assigned else " as a draft. Assign a driver and vehicle next"), "success")
+            flash("%s prepared%s." % (ts_no, " and assigned." if assigned
+                                      else " as draft. Assign a driver next"), "success")
             return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     candidates = dop.prepare_list(loc)
     selected_rf = request.values.get("rf_id", "")
@@ -55,7 +55,8 @@ def transfer_new():
     return render_template("delivery/transfer_new.html", candidates=candidates, selected_rf=selected_rf,
                            selected=selected, reserved_lines=dop.reserved_transfer_lines(selected["id"]) if selected else [],
                            f=request.form, drivers=[d for d in dop.list_drivers() if d["is_active"]],
-                           vehicles=[v for v in dop.list_vehicles() if v["is_active"]])
+                           vehicles=[v for v in dop.list_vehicles() if v["is_active"]],
+                           next_no=inv.peek_doc_no("TS"))
 
 
 @bp.route("/transfers/<int:ts_id>")
@@ -84,10 +85,10 @@ def transfer_driver_sign(ts_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("Signature of %s saved. The warehouse manager can now release the TS." % name, "success")
+            flash("Signature of %s saved." % name, "success")
             return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     elif ts["status"] != "loaded" and docs.driver_signature(ts) is None:
-        flash("The driver signs after the loading check, before the manager releases the TS.", "error")
+        flash("The driver signs after loading, before release.", "error")
         return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     return render_template("delivery/transfer_driver_sign.html", ts=ts, driver_sig=docs.driver_signature(ts))
 
@@ -102,7 +103,7 @@ def transfer_cancel(ts_id):
         inv.rollback()
         flash(str(e), "error")
     else:
-        flash("%s was cancelled. The stock stays reserved for the RF." % ts_no, "success")
+        flash("%s cancelled. Stock stays reserved." % ts_no, "success")
     return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
 
 
@@ -114,7 +115,7 @@ def transfer_assign(ts_id):
     if ts is None:
         return render_template("404.html"), 404
     if ts["status"] != "draft":
-        flash("Assign a driver and vehicle only while the TS is a draft.", "error")
+        flash("Only a draft TS can be assigned.", "error")
         return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     if request.method == "POST":
         try:
@@ -125,7 +126,7 @@ def transfer_assign(ts_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s assigned. Warehouse staff can do the loading check." % ts_no, "success")
+            flash("%s assigned." % ts_no, "success")
             return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     return render_template("delivery/transfer_assign.html", ts=ts,
                            drivers=dop.list_drivers(), vehicles=dop.list_vehicles(), f=request.form)
@@ -138,7 +139,7 @@ def transfer_load(ts_id):
     if ts is None:
         return render_template("404.html"), 404
     if ts["status"] != "assigned":
-        flash("The loading check needs a TS that already has a driver and vehicle.", "error")
+        flash("Assign a driver and vehicle first.", "error")
         return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     if request.method == "POST":
         try:
@@ -148,7 +149,7 @@ def transfer_load(ts_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s loaded and checked. Now hand the device to the driver to sign." % ts_no, "success")
+            flash("%s loaded. Hand the device to the driver." % ts_no, "success")
             return redirect(url_for("delivery.transfer_driver_sign", ts_id=ts_id))
     return render_template("delivery/transfer_load.html", ts=ts,
                            d=docs.load("TS", ts_id, current_user()))
@@ -174,7 +175,7 @@ def transfer_release(ts_id):
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s signed and released. The stock is in transit to the shop." % ts_no, "success")
+            flash("%s signed and released. Stock is in transit." % ts_no, "success")
             return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
     return render_template("delivery/transfer_release.html", ts=ts, driver_sig=docs.driver_signature(ts),
                            paper_reason=request.form.get("paper_reason", ""), d=docs.load("TS", ts_id, user))

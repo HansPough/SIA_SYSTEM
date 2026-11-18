@@ -300,6 +300,15 @@ def next_doc_no(doc_type, year=None):
     return "%s-%d-%04d" % (doc_type, year, row["last_no"])
 
 
+def peek_doc_no(doc_type, year=None):
+    """The number the next save will get, without taking it. Read-only."""
+    year = year or date.today().year
+    row = _backend.one(
+        "SELECT last_no FROM document_sequences WHERE doc_type = :t AND doc_year = :y",
+        t=doc_type, y=year)
+    return "%s-%d-%04d" % (doc_type, year, (row["last_no"] if row else 0) + 1)
+
+
 def write_audit(user_id, action, table_name, record_id=None, old=None, new=None, ip=None):
     """One audit_log row. old / new are dicts (or None)."""
     _backend.execute(

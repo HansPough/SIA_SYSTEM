@@ -54,8 +54,13 @@
 </form>
 {%- endmacro %}
 
+{#- One status badge for the whole app: the colour comes from app/statuses.py. -#}
+{% macro status(value, extra='', label='', tone='') -%}
+<span class="badge s-{{ tone or status_tone(value) }}{{ ' ' ~ extra if extra else '' }}">{{ label or status_label(value) }}</span>
+{%- endmacro %}
+
 {#- The status badge of an alert row or page: snoozed alerts say until when. -#}
 {% macro alert_badge(a) -%}
-{% if a.is_snoozed %}<span class="badge snooze" title="Open, but silent until then">Snoozed until {{ (a.snoozed_until|string)[:10] }}</span>
-{% else %}<span class="badge {{ 'warn' if a.status == 'active' }}">{{ a.status|capitalize }}</span>{% endif %}
+{% if a.is_snoozed %}<span class="badge s-info" title="Open, but silent until then">Snoozed until {{ (a.snoozed_until|string)[:10] }}</span>
+{% else %}{{ status(a.status, tone=('warn' if a.status == 'active' else '')) }}{% endif %}
 {%- endmacro %}

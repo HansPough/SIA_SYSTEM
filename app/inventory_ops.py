@@ -364,8 +364,13 @@ def get_issue(issue_id, scope):
 # Stock adjustments
 # ---------------------------------------------------------------------
 
-def create_adjustment(user_id, location_id, reason, ar_no, remarks, triples):
-    """Record a pending adjustment. triples: (item_id, qty_actual, item_remarks). No stock changes yet."""
+def create_adjustment(user_id, location_id, reason, ar_no, remarks, triples, auto_approve=False):
+    """Record an adjustment. triples: (item_id, qty_actual, item_remarks).
+
+    A staff request is saved as pending for a manager. A manager's own entry is
+    approved immediately (auto_approve=True), because a manager does not approve
+    their own work: the stock changes in the same save.
+    """
     loc = get_location(location_id)
     if loc is None:
         raise InventoryError("Your account has no location. Ask the owner to set it.")
@@ -403,15 +408,27 @@ def create_adjustment(user_id, location_id, reason, ar_no, remarks, triples):
         rows.append((i, bal["on_hand"], actual, note))
 
     adj_no = inv.next_doc_no("ADJ")
+    status = "approved" if auto_approve else "pending"
     head = _b().one(
         "INSERT INTO stock_adjustments (adj_no, location_id, reason, status, source_ar_id, remarks, requested_by) "
         "VALUES (:n, :l, :r, 'pending', :ar, :rem, :u) RETURNING id",
-        n=adj_no, l=location_id, r=reason_code, ar=source_ar, rem=(remarks or "").strip() or None, u=user_id)
+        n=adj_no, l=location_id, r=reason_code, ar=source_ar,
+        rem=(remarks or "").strip() or None, u=user_id)
     for i, system, actual, note in rows:
         _b().execute("INSERT INTO stock_adjustment_items (adjustment_id, item_id, qty_system, qty_actual, item_remarks) "
                      "VALUES (:a, :i, :s, :q, :n)", a=head["id"], i=i, s=system, q=actual, n=note)
+    if auto_approve:
+        for i, system, actual, _note in rows:
+            inv.change_stock(i, location_id, actual - system, "adjustment",
+                             ref_type="ADJ", ref_id=head["id"], ref_no=adj_no,
+                             remarks=(reason_code or "")[:200], user_id=user_id)
+        refresh_alerts(location_id, [r[0] for r in rows])
+        _b().execute(
+            "UPDATE stock_adjustments SET status = 'approved', auto_approved = TRUE, reviewed_by = :u, "
+            "review_remarks = :r, reviewed_at = CURRENT_TIMESTAMP WHERE id = :i",
+            u=user_id, r="Approved on save (manager)", i=head["id"])
     inv.write_audit(user_id, "create", "stock_adjustments", head["id"],
-                    new={"adj_no": adj_no, "location": loc["code"], "reason": reason_code,
+                    new={"adj_no": adj_no, "location": loc["code"], "reason": reason_code, "status": status,
                          "items": {i: [s, a] for i, s, a, _ in rows}})
     return head["id"], adj_no
 
@@ -717,17 +734,17 @@ def list_rf_queue(warehouse_id, q="", status="", page=1):
 def _queue_stage(r):
     """One clear stage and one next action per RF, so the badge and the button always agree."""
     if r["active_transfer_id"] and r["active_transfer_status"] in ("draft", "assigned", "loaded"):
-        r.update(stage="Transfer in progress", tone="warn", next_kind="transfer", next_label="Open transfer", next_primary=False)
+        r.update(stage="Transfer in progress", tone="info", next_kind="transfer", next_label="Open transfer", next_primary=False)
     elif r["active_transfer_id"] and not r["n_waiting"]:
-        r.update(stage="In transit", tone="", next_kind="transfer", next_label="Open transfer", next_primary=False)
+        r.update(stage="In transit", tone="info", next_kind="transfer", next_label="Open transfer", next_primary=False)
     elif r["n_reservable"]:
-        r.update(stage="Ready to reserve", tone="warn", next_kind="review", next_label="Review RF", next_primary=True)
+        r.update(stage="Ready to reserve", tone="ok", next_kind="review", next_label="Review RF", next_primary=True)
     elif r["n_waiting"]:
         r.update(stage="Waiting for stock", tone="danger", next_kind="review", next_label="Review RF", next_primary=False)
     elif r["n_reserved"]:
-        r.update(stage="Ready for transfer", tone="warn", next_kind="create", next_label="Create transfer", next_primary=True)
+        r.update(stage="Ready for transfer", tone="ok", next_kind="create", next_label="Create transfer", next_primary=True)
     else:
-        r.update(stage=str(r["status"]).replace("_", " ").capitalize(), tone="", next_kind="review",
+        r.update(stage=str(r["status"]).replace("_", " ").capitalize(), tone="warn", next_kind="review",
                  next_label="Review RF", next_primary=False)
 
 

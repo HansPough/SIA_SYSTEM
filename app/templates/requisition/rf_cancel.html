@@ -3,17 +3,17 @@
 {% block title %}Cancel RF {{ rf.rf_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Cancel RF {{ rf.rf_no }}</h1>
-  <span class="badge warn">{{ rf.status|replace('_', ' ')|capitalize }}</span>
+  {{ m.status(rf.status) }}
 </div>
-<p class="note">The warehouse releases the reserved stock. A cancelled RF cannot be reopened.</p>
+<p class="note">Reserved stock goes back to the warehouse.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RF no.', 'rf_no', 'text', value=rf.rf_no, readonly=True) }}
   {{ m.field('Shop', 'shop', 'text', value=rf.shop, readonly=True) }}
   {{ m.field('Warehouse', 'warehouse', 'text', value=rf.warehouse, readonly=True) }}
-  {{ m.field('Status', 'status', 'text', value=rf.status|replace('_', ' ')|capitalize, readonly=True) }}
+  {{ m.field('Status', 'status', 'text', value=status_label(rf.status), readonly=True) }}
   {{ m.field('Reason for cancelling', 'cancel_reason', 'textarea', value=f.get('cancel_reason', ''),
-             required=True, col=2, help='for example: ordered by mistake') }}
+             required=True, col=2, help='why this request is cancelled') }}
 </div>
 <div class="actions">
   <button type="submit" name="action" value="cancel_rf" class="btn danger">Cancel RF</button>

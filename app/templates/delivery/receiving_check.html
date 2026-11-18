@@ -1,16 +1,16 @@
 {% extends 'base.html' %}
 {% import '_macros.html' as m %}
-{% block title %}Check Goods {{ po.po_no }}{% endblock %}
+{% block title %}Check goods {{ po.po_no }}{% endblock %}
 {% block content %}
 {% set delivered_vals = f.getlist('qty_delivered[]') %}
 {% set accepted_vals = f.getlist('qty_accepted[]') %}
 {% set rejected_vals = f.getlist('qty_rejected[]') %}
 {% set reason_vals = f.getlist('reject_reason[]') %}
-<div class="page-head"><h1>Check Goods (RM)</h1><span class="badge warn">{{ po.po_no }}</span></div>
-<p class="note">Accepted + rejected = delivered. A short or rejected quantity opens a discrepancy report.</p>
+<div class="page-head"><h1>Check goods</h1><span class="badge">{{ po.po_no }}</span></div>
+<p class="note">Accepted + rejected = delivered.</p>
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('RM no.', 'rm_no', 'text', value='auto', readonly=True) }}
+  {{ m.field('RM no.', 'rm_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('PO no.', 'po_no', 'text', value=po.po_no, readonly=True) }}
   {{ m.field('Supplier', 'supplier', 'text', value=po.supplier_name, readonly=True) }}
   {{ m.field('Supplier contact', 'supplier_contact', 'text', value=po.supplier_contact or '–', readonly=True) }}
@@ -46,7 +46,7 @@
 {% if current_role == 'warehouse_manager' %}
 {{ m.signing_box('Saving signs the receiving memo as checked by you.') }}
 {% else %}
-<p class="note">You do not sign. The warehouse manager signs the memo.</p>
+<p class="note">The warehouse manager signs this memo.</p>
 {% endif %}
 <div class="actions">
   <button type="submit" name="action" value="save_receiving_memo" class="btn primary">Save receiving memo</button>

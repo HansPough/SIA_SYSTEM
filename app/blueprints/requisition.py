@@ -63,7 +63,8 @@ def alert_detail(alert_id):
     alert = rq.get_alert(alert_id, loc) if loc else None
     if alert is None:
         return render_template("404.html"), 404
-    return render_template("requisition/alert_detail.html", alert=alert)
+    return render_template("requisition/alert_detail.html", alert=alert,
+                           existing_rf=rq.rf_for_alert(alert_id))
 
 
 @bp.route("/alerts/<int:alert_id>/snooze", methods=["POST"])
@@ -78,7 +79,7 @@ def alert_snooze(alert_id):
         inv.rollback()
         flash(str(e), "error")
     else:
-        flash("%s is silent until %s. It stays open and counts again then." % (no, until.strftime("%d %b %Y")), "success")
+        flash("%s is silent until %s." % (no, until.strftime("%d %b %Y")), "success")
     return redirect(url_for("requisition.alert_list"))
 
 
@@ -149,6 +150,10 @@ def rf_new():
         if alert is None:
             flash("That alert was not found for your shop.", "error")
             return redirect(url_for("requisition.alert_list"))
+        existing = rq.rf_for_alert(alert["id"])
+        if existing:
+            flash("That alert already has %s." % existing["rf_no"], "info")
+            return redirect(url_for("requisition.rf_detail", rf_id=existing["id"]))
 
     if request.method == "POST":
         try:
@@ -168,7 +173,7 @@ def rf_new():
             if status == "open":
                 flash("%s signed and sent to the warehouse." % rf_no, "success")
             else:
-                flash("%s saved as a draft. Submit it when you are ready." % rf_no, "success")
+                flash("%s saved as draft." % rf_no, "success")
             return redirect(url_for("requisition.rf_detail", rf_id=rf_id))
 
     try:
@@ -177,7 +182,7 @@ def rf_new():
         flash(str(e), "error")
         return redirect(url_for("requisition.rf_list"))
     return render_template("requisition/rf_new.html", data=data, alert=alert, f=request.form,
-                           requested_by=user["name"])
+                           requested_by=user["name"], next_no=inv.peek_doc_no("RF"))
 
 
 @bp.route("/rf/<int:rf_id>", methods=["GET", "POST"])
@@ -227,7 +232,7 @@ def rf_cancel(rf_id):
         else:
             msg = "%s was cancelled." % rf_no
             if released:
-                msg += " %d reservation(s) were released back to the warehouse." % released
+                msg += " %d reservation(s) released." % released
             flash(msg, "success")
             return redirect(url_for("requisition.rf_list"))
     return render_template("requisition/rf_cancel.html", rf=rf, f=request.form)
