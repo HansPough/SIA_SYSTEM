@@ -80,6 +80,20 @@ class DocumentTests(Base):
                 signing.sign_slot({"id": self.uid[user], "role": role}, dt, 1, slot, "x" * 64)
         self.assertEqual([r["doc_type"] for r in self.sigs()].count("PO"), 0)
 
+    def test_transfer_slip_shows_the_requested_quantity_against_the_shipped(self):
+        self.chain()
+        page = self.c.get("/documents/TS/1").get_data(as_text=True)
+        self.assertIn("requested 5", page)          # RF line, while the Qty column shows what this slip carries
+        self.assertIn("requested 3", page)
+        self.assertNotIn("Changed after signing", page)      # line notes are outside the signature hash
+
+    def test_receipt_shows_requested_against_received_and_the_shortfall(self):
+        self.chain()
+        self.receive(qty_b=2, reason="one short")
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("requested 3", page)
+        self.assertIn("1 rejected/short", page)
+
     def test_receiving_signs_the_ar_and_the_ts_received_line(self):
         self.chain()
         self.receive()

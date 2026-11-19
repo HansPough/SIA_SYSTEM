@@ -3,7 +3,9 @@
 {% block title %}Choose Suppliers {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Choose suppliers</h1><span class="badge">{{ data.ref.ref_no }}</span></div>
-<p class="note">Pick a supplier per item. <strong>Keep it open</strong> to ask more later.</p>
+<p class="note">Pick a supplier per item, or apply one offer to every item it covers.
+  <strong>Keep it open</strong> to ask more later. The owner approves each supplier separately,
+  and each approved supplier gets its own purchase order.</p>
 
 {% if data.pending %}
 <div class="flash">This REF is already waiting for the owner's decision.</div>
@@ -12,37 +14,77 @@
 <div class="flash success">Every item on this REF is already ordered or dropped.</div>
 <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
 {% else %}
-<form method="post" class="card">
+<form method="post" class="card" data-split>
+<div class="actions" style="margin-bottom:8px">
+  <label for="bulk-offer" class="muted">One offer for every item:</label>
+  <select id="bulk-offer">
+    <option value="">-- choose a supplier offer --</option>
+    {% set seen = namespace(keys=[]) %}
+    {% for l in data.lines %}{% for o in l.options %}
+      {% if o.key not in seen.keys %}
+        {% set seen.keys = seen.keys + [o.key] %}
+        <option value="{{ o.key }}">{{ o.supplier_name }} &mdash; {{ o.unit_price|money }} each{% if o.expired %} (expired){% endif %}</option>
+      {% endif %}
+    {% endfor %}{% endfor %}
+  </select>
+  <button type="button" class="btn small" id="bulk-apply">Apply</button>
+</div>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Item</th><th class="num">Still to order</th><th>Order from</th></tr></thead>
 <tbody>
 {% for l in data.lines %}
-<tr>
+<tr data-item-row>
   <td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small>
     {% if l.on_po or l.qty_dropped %}<small class="muted">requested {{ l.qty_requested }}{% if l.on_po %}, ordered {{ l.on_po }}{% endif %}{% if l.qty_dropped %}, dropped {{ l.qty_dropped }}{% endif %}</small>{% endif %}</td>
   <td class="num"><strong>{{ l.open }}</strong></td>
   <td>
     {% for o in l.options %}
     <label class="choice {{ 'muted' if o.expired }}">
-      <input type="radio" name="choice_{{ l.ref_item_id }}" value="{{ o.key }}" {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
+      <input type="radio" name="choice_{{ l.ref_item_id }}" value="{{ o.key }}"
+             data-supplier-id="{{ o.supplier_id }}" data-supplier="{{ o.supplier_name }}"
+             data-basis="{{ o.kind }}" data-item="{{ l.item_name }}"
+             data-qty="{{ o.max_qty if o.max_qty < l.open else l.open }}"
+             {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
       <strong>{{ o.supplier_name }}</strong>
-      &mdash; {{ o.unit_price|money }} each, can supply {{ o.max_qty }}{% if o.max_qty < l.open %} (short by {{ l.open - o.max_qty }}){% endif %}{% if o.lead %}, {{ o.lead }} day(s){% endif %}
+      &mdash; {{ o.unit_price|money }} each, can supply {{ o.max_qty }}{% if o.max_qty < l.open %} (short by {{ l.open - o.max_qty }}, the rest stays open){% endif %}{% if o.lead %}, {{ o.lead }} day(s){% endif %}
       {% if o.expired %}<span class="badge s-warn">expired</span>{% endif %}
     </label>
     {% else %}
     <small class="muted">No supplier has quoted this item yet.
       <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers</a></small>
     {% endfor %}
-    <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" {{ 'checked' if l.default == 'open' }}>
+    <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" data-supplier-id=""
+             data-supplier="Keep open" data-basis="" data-item="{{ l.item_name }}"
+             {{ 'checked' if l.default == 'open' }}>
       Not now: keep it open (ask more suppliers, order it later)</label>
     <div class="choice-extra">
-      <input type="number" min="1" name="qty_{{ l.ref_item_id }}" placeholder="qty (blank = all they can supply)" aria-label="Quantity">
+      <label class="muted" for="qty_{{ l.ref_item_id }}">Qty from the chosen supplier</label>
+      <input type="number" min="1" id="qty_{{ l.ref_item_id }}" name="qty_{{ l.ref_item_id }}"
+             placeholder="blank = all they can supply" aria-label="Quantity from the chosen supplier">
     </div>
   </td>
 </tr>
 {% endfor %}
 </tbody>
 </table></div>
+
+<div class="card" id="split-preview">
+<h2 style="margin-top:0">What sending this does</h2>
+<p class="note">One approval per supplier. The owner decides each supplier separately; each approved supplier gets its own PO.</p>
+<ul id="split-list">
+{% for g in data.groups %}
+<li><strong>{{ g.supplier_name }}</strong> &mdash; {{ g.lines|length }} item{{ 's' if g.lines|length != 1 }}:
+  {% for i in g.lines %}{{ i.name }} &times; {{ i.qty }}{{ ', ' if not loop.last }}{% endfor %}
+  <span class="muted">({{ g.total|money }})</span></li>
+{% else %}
+<li class="muted">No supplier chosen yet.</li>
+{% endfor %}
+</ul>
+<p><strong id="split-count">{{ data.groups|length }}</strong> supplier(s) &rarr;
+  <strong id="split-pos">{{ data.groups|length }}</strong> purchase order(s) after approval.
+  <span class="muted" id="split-open"></span></p>
+</div>
+
 <div class="actions">
   <button type="submit" class="btn primary">Send for approval</button>
   <a class="btn secondary" href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">Record quotation</a>
@@ -63,5 +105,72 @@
 {% endfor %}
 </tbody>
 </table></div>
+{% endif %}
+
+{% if data.lines %}
+<script>
+(function () {
+  var form = document.querySelector("form[data-split]");
+  if (!form) { return; }
+  var list = document.getElementById("split-list");
+  var count = document.getElementById("split-count");
+  var pos = document.getElementById("split-pos");
+  var openNote = document.getElementById("split-open");
+  function textLine(text, className) {
+    var li = document.createElement("li");
+    if (className) { li.className = className; }
+    li.textContent = text;
+    return li;
+  }
+  function refresh() {
+    var groups = {}, order = [], open = 0;
+    form.querySelectorAll("tr[data-item-row]").forEach(function (row) {
+      var checked = row.querySelector("input[type=radio]:checked");
+      if (!checked || checked.value === "open") { open += 1; return; }
+      var key = checked.getAttribute("data-supplier-id") + "|" + checked.getAttribute("data-basis");
+      if (!groups[key]) {
+        groups[key] = {name: checked.getAttribute("data-supplier"), items: []};
+        order.push(key);
+      }
+      var qty = row.querySelector("input[type=number]");
+      var amount = qty && qty.value !== "" ? qty.value : checked.getAttribute("data-qty");
+      groups[key].items.push(checked.getAttribute("data-item") + " \u00d7 " + amount);
+    });
+    list.innerHTML = "";
+    if (!order.length) {
+      list.appendChild(textLine("No supplier chosen yet.", "muted"));
+    }
+    order.forEach(function (key) {
+      var g = groups[key];
+      list.appendChild(textLine(g.name + " \u2014 " + g.items.length + " item" +
+        (g.items.length === 1 ? "" : "s") + ": " + g.items.join(", ")));
+    });
+    count.textContent = String(order.length);
+    pos.textContent = String(order.length);
+    openNote.textContent = open ? " " + open + " item" + (open === 1 ? "" : "s") + " stay open." : "";
+  }
+  form.addEventListener("change", refresh);
+  form.addEventListener("input", refresh);
+  var bulk = document.getElementById("bulk-offer");
+  var apply = document.getElementById("bulk-apply");
+  if (bulk && apply) {
+    apply.addEventListener("click", function () {
+      var value = bulk.value;
+      if (!value) { return; }
+      form.querySelectorAll("tr[data-item-row]").forEach(function (row) {
+        var target = null;
+        row.querySelectorAll("input[type=radio]").forEach(function (radio) {
+          if (radio.value === value) { target = radio; }
+        });
+        if (target) { target.checked = true; return; }
+        var fallback = row.querySelector('input[type=radio][value="open"]');
+        if (fallback) { fallback.checked = true; }
+      });
+      refresh();
+    });
+  }
+  refresh();
+})();
+</script>
 {% endif %}
 {% endblock %}

@@ -218,6 +218,7 @@ def get_transfer(ts_id, user):
     head["lines"] = _b().all(
         "SELECT ti.id AS ts_item_id, ti.rf_item_id, ti.item_id, ti.qty_released, ti.loaded, "
         "i.item_code, i.item_name, "
+        "COALESCE(x.qty_requested, ti.qty_released) AS qty_requested, "
         "(SELECT ai.qty_received FROM acknowledgment_receipt_items ai "
         " WHERE ai.ts_item_id = ti.id LIMIT 1) AS qty_received, "
         "(SELECT ai.qty_expected FROM acknowledgment_receipt_items ai "
@@ -225,6 +226,7 @@ def get_transfer(ts_id, user):
         "(SELECT ai.variance_resolved_at FROM acknowledgment_receipt_items ai "
         " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_resolved_at "
         "FROM transfer_slip_items ti JOIN items i ON i.id = ti.item_id "
+        "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
         "WHERE ti.ts_id = :t ORDER BY i.item_name", t=ts_id)
     head["ar"] = _b().one("SELECT * FROM acknowledgment_receipts WHERE ts_id = :t", t=ts_id)
     return head

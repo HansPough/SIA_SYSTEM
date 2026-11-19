@@ -5,7 +5,7 @@
 <div class="page-head"><h1>Approve supplier</h1>
   {{ m.status('pending', label='Waiting for you') if appr.batch_pending else m.status('approved', label='Decided') }}
 </div>
-<p class="note">Each approved supplier gets its own PO for the warehouse manager to send.</p>
+<p class="note">Each supplier is decided separately; each approved supplier gets its own PO for the warehouse manager to send.</p>
 <div class="card">
 <dl class="info">
   <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=appr.ref_id) }}">{{ appr.ref_no }}</a></dd></div>
@@ -20,7 +20,7 @@
 <div class="card">
   <h2 style="margin-top:0">{{ b.supplier_name }}
     {{ m.status(b.decision) }}</h2>
-  <p class="muted">{{ 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') if b.basis == 'quotation' else 'Agreed price (regular supplier)' }}</p>
+  <p class="muted">{{ 'Agreed price (regular supplier)' if b.basis == 'agreed_price' else 'Mixed: quotation and agreed price' if b.basis == 'mixed' else 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') }}</p>
   <div class="table-wrap"><table class="data">
   <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr></thead>
   <tbody>

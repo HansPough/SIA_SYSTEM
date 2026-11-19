@@ -61,15 +61,20 @@ Every detail screen now has a **Print / Sign** button. The page:
 
 ## Ordering from several suppliers
 
-A REF can be ordered from more than one supplier. On **Choose suppliers**, pick a supplier per item (or **Keep open** /
-**Drop** with a reason). The owner sees every supplier of that submission on one approval screen and decides each one;
-each approved supplier gets its own PO, which the warehouse manager sends. The REF is "approved" only when nothing is
-still open and closes when all that was wanted has been received.
+A REF can be ordered from more than one supplier. On **Choose suppliers**, each open item goes to exactly one
+supplier (a quotation or a regular supplier's agreed price) or is **kept open**; the screen preselects the cheapest
+offer per item and shows a **split preview** — every supplier with its items, quantities and total — before you
+submit, plus a bulk control to apply one offer to every item it covers. One approval is created **per supplier**;
+the owner sees every supplier of that submission on one approval screen and decides each one, and each approved
+supplier gets its own PO, which the warehouse manager sends. Choosing the same supplier again in a later RFQ round
+merges into that supplier's single approval and PO. The REF is "approved" only when nothing is still open and
+closes when all that was wanted has been received.
 
-If a supplier does not have an item: **Keep open**, then **Ask more suppliers (new RFQ)** on the REF (it covers only the
-open items and can include new suppliers), or order it at a regular supplier's **agreed price**. Suppliers and their agreed
-prices are managed by the owner and the warehouse manager (**Suppliers**). **Give up** is only for an item you will not
-order at all: it needs a real reason, and the item is flagged again in the restock alerts if it is still below its ROP.
+If a supplier does not have an item: **Keep open**, then **Ask more suppliers (new RFQ)** on the REF (a new round
+covering only the open items, with any suppliers), or order it at a regular supplier's agreed price — agreed prices
+work even when no RFQ was ever sent. Suppliers and their agreed prices are managed by the owner and the warehouse
+manager (**Suppliers**). **Give up** is only on the REF page and only for an item you will not order at all: it
+needs a real reason, and the item is flagged again in the restock alerts if it is still below its ROP.
 
 ## How signing works (migration `010_signature_integrity.sql`)
 

@@ -55,17 +55,18 @@ restock alert ──► REF (draft ─► submitted)
 |---|---|
 | Prices | Purchasing **does** use prices: `quotation_items.unit_price`, `supplier_items.agreed_price`, `purchase_order_items.unit_price`. The handoff's "no unit prices" decision was about Inventory/sales; the purchasing schema and the owner's "approve supplier and price" role need them. |
 | Money | Validated and rounded to 2 decimals here, passed to SQL as strings, so PostgreSQL `NUMERIC` and SQLite store the same value. Templates print with a `money` filter. |
-| Completing the restock alert | The alert is completed (status, `closed_by`, `closed_at`, audit row) when the **REF is submitted**, not when a draft is saved. Buying now owns that restock. |
+| Completing the restock alert | Submitting the **REF** (not a draft) takes the REF's items off the alert. The alert is completed (status, `closed_by`, `closed_at`, audit row) only when no item rows are left, so items left out of that REF stay on the alert. |
 | REF drafts | A draft can be submitted from the REF detail page. |
 | RFQ email | The system does **not** send email. "Send RFQ" records the RFQ as sent (`sent_at`, `rfq_suppliers.sent_at`) and the warehouse emails the suppliers itself. The page says so. |
-| One RFQ per REF | Kept simple: one RFQ with any number of suppliers. Sending a second is refused; record more quotations on the same RFQ instead. |
+| RFQ rounds | One RFQ per round, each sent to any number of suppliers. **Ask more suppliers** sends a new round covering only the items still open; the REF page groups the suppliers and replies under their RFQ number, with the note "One RFQ per round". A second round is how you follow up on a supplier who had no stock. |
 | Quotations | One per supplier per RFQ. Saving the same supplier again **replaces** their lines and totals. `qty_offered` can be less than requested (0 = not offered). |
 | Quotation supplier list | Every **active** supplier is listed, with the ones the RFQ was sent to first. A supplier who replied but was not recorded as sent is accepted and added to `rfq_suppliers` (with `sent_at` left empty), instead of refusing the reply. |
 | Quotation prices | Opening the page selects the RFQ supplier and fills the unit-price boxes from that supplier's valid `supplier_items.agreed_price` rows, so 40+ lines do not have to be typed. Opening a supplier who already has a quotation reloads that quotation's quantities and prices; the screen says the user must change a price to what the supplier actually quoted. |
 | Quotation expiry | A quotation whose `valid_until` is before today cannot be sent for approval; record a fresh quotation first. |
-| Partial quotation | If a quotation does not cover every REF line, the approval page lists the missing items and warns that they will not be on the PO. The remaining balance needs a new REF. |
+| Partial quotation | A quotation does not have to cover every REF line: items it does not offer simply stay open, and can go to another supplier, a later RFQ round, or a regular supplier's agreed price. The approval page lists the lines still open for the REF so the owner knows what the PO does not cover. |
 | ROP = 0 | A ROP of 0 is a real threshold, not "not set up": the item appears on the restock alert as soon as available stock reaches 0. Only an item with **no** `item_location_settings` row is treated as not configured. |
-| Choosing a supplier | Either a recorded quotation, or a regular supplier's valid agreed prices (all REF items must be covered). Either way one `purchase_approvals` row with `decision = 'pending'`. |
+| Choosing a supplier | **Choose suppliers** splits an REF **item by item**: each open item is sent to exactly one supplier — a recorded quotation, or a regular supplier's valid agreed prices — or kept open. The preselected offer is the cheapest per item, and a **split preview** shows each supplier with its items, quantities and total before submitting; a bulk control applies one offer to every item it covers. The screen works without an RFQ at all when agreed prices exist. One `purchase_approvals` row (decision `pending`) is written **per supplier**, all sharing a `batch_id`; the same supplier chosen across two RFQ rounds merges into a single approval (`quotation_id` is set only when every line came from one quotation). |
+| Dropping an item | Only on the REF page (**Give up**), never on Choose suppliers. A real reason (at least 5 characters, not just "drop") is required, and if the item is still at or below its reorder point it shows up in the restock alerts again. A dropped item can be restored from the REF page and then needs a supplier again. |
 | Approving | Owner only. The approval form can capture the **expected delivery date** and **PO terms**; approval creates the **PO as a draft** (no email), sets the REF to `approved`, and writes the audit row. The PO page has "Mark as sent" for the warehouse manager/owner. |
 | Rejecting | Remarks are required. The REF goes back to `submitted` so the warehouse can choose again; no PO is made. |
 | Edit PO | A `draft` PO can change its expected delivery date and terms. Items and prices stay as the owner approved them; cancel and re-order if they must change. |
@@ -79,7 +80,8 @@ restock alert ──► REF (draft ─► submitted)
 
 - `replenishments` + `replenishment_items` (create/submit/cancel); shortage lines can point at
   the waiting RF (`rf_id`).
-- `notifications` (completed when the REF is submitted), `audit_log` for every action.
+- `notifications` (the REF's items are removed when it is submitted; completed only when the alert is empty),
+  `audit_log` for every action.
 - `rfqs`, `rfq_suppliers`, `quotations`, `quotation_items`.
 - `purchase_approvals` (pending → approved/rejected).
 - `purchase_orders` + `purchase_order_items` (draft → sent; expected date and terms on approval; edit/cancel).

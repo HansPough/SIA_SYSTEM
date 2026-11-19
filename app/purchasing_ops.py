@@ -216,12 +216,20 @@ def dismiss_alert(user, alert_id, reason):
     return alert_no(alert_id)
 
 
-def _complete_alert(user_id, notification_id):
-    """Purchasing owns the restock alert: completing it when the REF is submitted."""
+def _complete_alert(user_id, notification_id, item_ids):
+    """Purchasing owns the restock alert: the items put on the REF come off it when the
+    REF is submitted. The alert closes only when nothing else is left waiting on it."""
     if not notification_id:
         return
     row = _b().one("SELECT id, status FROM notifications WHERE id = :i", i=notification_id)
-    if row and row["status"] == "active":
+    if row is None or row["status"] != "active":
+        return
+    for item_id in set(item_ids):
+        _b().execute("DELETE FROM notification_items WHERE notification_id = :n AND item_id = :i",
+                     n=notification_id, i=item_id)
+    left = _b().one("SELECT COUNT(*) AS n FROM notification_items WHERE notification_id = :n",
+                    n=notification_id)["n"]
+    if left == 0:
         _b().execute("UPDATE notifications SET status = 'completed', closed_by = :u, "
                      "closed_at = CURRENT_TIMESTAMP WHERE id = :i", u=user_id, i=notification_id)
         inv.write_audit(user_id, "complete", "notifications", notification_id,
@@ -293,15 +301,6 @@ def get_ref(ref_id, user):
         "FROM rfqs rq JOIN rfq_suppliers rs ON rs.rfq_id = rq.id "
         "JOIN suppliers s ON s.id = rs.supplier_id "
         "WHERE rq.ref_id = :r ORDER BY rq.id, s.supplier_name", r=ref_id)
-    head["approval"] = _b().one(
-        "SELECT pa.*, s.supplier_name, u.full_name AS submitted_by_name, d.full_name AS decided_by_name, "
-        "q.quotation_ref FROM purchase_approvals pa JOIN suppliers s ON s.id = pa.supplier_id "
-        "JOIN users u ON u.id = pa.submitted_by LEFT JOIN users d ON d.id = pa.decided_by "
-        "LEFT JOIN quotations q ON q.id = pa.quotation_id "
-        "WHERE pa.ref_id = :r ORDER BY pa.id DESC LIMIT 1", r=ref_id)
-    head["po"] = _b().one(
-        "SELECT po.*, s.supplier_name FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id "
-        "WHERE po.ref_id = :r ORDER BY po.id DESC LIMIT 1", r=ref_id)
     head["approvals"] = _b().all(
         "SELECT pa.*, s.supplier_name FROM purchase_approvals pa JOIN suppliers s ON s.id = pa.supplier_id "
         "WHERE pa.ref_id = :r ORDER BY pa.id", r=ref_id)
@@ -345,8 +344,8 @@ def ref_for_alert(alert_id):
 def create_ref(user, warehouse_id, remarks, pairs, submit, alert_id=None):
     """Save the REF and its lines. Returns (ref_id, ref_no, status).
 
-    pairs: (item_id, qty, reason) from the form. When submitted, the source restock
-    alert is completed, because Purchasing now owns that restock.
+    pairs: (item_id, qty, reason) from the form. When submitted, the items on the form
+    come off the source restock alert, because Purchasing now owns their restock.
     """
     warehouse = get_warehouse(warehouse_id)
     if user["role"] != "warehouse_manager" or warehouse_id != user["location_id"]:
@@ -398,7 +397,7 @@ def create_ref(user, warehouse_id, remarks, pairs, submit, alert_id=None):
             "VALUES (:r, :i, :q, :why, :rf)", r=ref_id, i=item_id, q=line["qty"],
             why=line["reason"], rf=rf["id"] if rf else None)
     if submit:
-        _complete_alert(user["id"], alert_id)
+        _complete_alert(user["id"], alert_id, lines.keys())
     inv.write_audit(user["id"], "create", "replenishments", ref_id,
                     new={"ref_no": ref_no, "warehouse": warehouse["code"], "status": status,
                          "items": [[i, l["qty"], l["reason"]] for i, l in lines.items()]})
@@ -413,7 +412,8 @@ def submit_ref(user, ref_id):
         raise InventoryError("This form has no items.")
     _b().execute("UPDATE replenishments SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP "
                  "WHERE id = :i", i=ref_id)
-    _complete_alert(user["id"], ref["notification_id"])
+    items = _b().all("SELECT item_id FROM replenishment_items WHERE ref_id = :r", r=ref_id)
+    _complete_alert(user["id"], ref["notification_id"], [r["item_id"] for r in items])
     inv.write_audit(user["id"], "submit", "replenishments", ref_id,
                     old={"status": "draft"}, new={"status": "submitted", "ref_no": ref["ref_no"]})
     return ref["ref_no"]
@@ -743,8 +743,26 @@ def _line_options(ref_id, lines):
             pick = None
         ln["options"] = options
         ln["default"] = pick["key"] if pick else "open"
-        ln["default_qty"] = min(pick["max_qty"], ln["open"]) if pick else 0
     return lines
+
+
+def _default_split(lines):
+    """Group the pre-selected offer of each line by supplier, for the split preview."""
+    groups = {}
+    for ln in lines:
+        opt = next((o for o in ln["options"] if o["key"] == ln["default"]), None)
+        if ln["default"] == "open" or opt is None:
+            continue
+        g = groups.setdefault((opt["supplier_id"], opt["kind"]),
+                              {"supplier_name": opt["supplier_name"], "lines": []})
+        g["lines"].append({"name": ln["item_name"], "qty": min(opt["max_qty"], ln["open"]),
+                           "unit_price": opt["unit_price"]})
+    out = []
+    for g in groups.values():
+        g["total"] = _total_text(g["lines"])
+        out.append(g)
+    out.sort(key=lambda g: g["supplier_name"].lower())
+    return out
 
 
 def compare_data(ref_id, user):
@@ -752,13 +770,8 @@ def compare_data(ref_id, user):
     ref = _ref_for_write(user, ref_id)
     coverage_lines = cov.coverage(ref_id)
     open_ = _line_options(ref_id, [dict(c) for c in coverage_lines if c["open"] > 0])
-    quotations = _b().all(
-        "SELECT q.id, q.quotation_ref, q.quotation_date, q.valid_until, q.total_amount, "
-        "s.id AS supplier_id, s.supplier_name, rq.rfq_no "
-        "FROM quotations q JOIN suppliers s ON s.id = q.supplier_id "
-        "JOIN rfqs rq ON rq.id = q.rfq_id WHERE rq.ref_id = :r ORDER BY s.supplier_name", r=ref_id)
     done = [c for c in coverage_lines if c["open"] == 0]
-    return {"ref": ref, "lines": open_, "done": done, "quotations": quotations,
+    return {"ref": ref, "lines": open_, "done": done, "groups": _default_split(open_),
             "pending": _b().one("SELECT COUNT(*) AS n FROM purchase_approvals WHERE ref_id = :r "
                                 "AND decision = 'pending'", r=ref_id)["n"] > 0}
 
@@ -766,11 +779,13 @@ def compare_data(ref_id, user):
 def submit_choices(user, ref_id, choices):
     """Send the owner one approval per supplier, all together.
 
-    choices: {ref_item_id: (choice, qty, reason)} for every line that still needs a supplier.
+    choices: {ref_item_id: (choice, qty)} for every line that still needs a supplier.
       choice  'q:<quotation id>'  order from that quotation
               'a:<supplier id>'   order at a regular supplier's agreed price
               'open'              keep open: order from someone else later
-              'drop'              give up on the remaining quantity (a reason is required)
+
+    Lines that go to the same supplier are one approval and later one PO, even when
+    they come from quotations recorded in different RFQ rounds.
     Returns (first_approval_id, ref_no, number_of_approvals).
     """
     ref = _ref_for_write(user, ref_id)
@@ -782,17 +797,14 @@ def submit_choices(user, ref_id, choices):
     lines = _line_options(ref_id, [dict(c) for c in cov.coverage(ref_id) if c["open"] > 0])
     if not lines:
         raise InventoryError("Every item on this REF is already ordered or dropped.")
-    groups, drops = {}, []
+    groups = {}
     for ln in lines:
         name = ln["item_name"]
-        choice, qty_raw, reason = choices.get(ln["ref_item_id"], ("", "", ""))
+        choice, qty_raw = choices.get(ln["ref_item_id"], ("", ""))
         choice = str(choice or "").strip()
         if not choice:
-            raise InventoryError("%s: choose a supplier, keep it open, or drop it." % name)
+            raise InventoryError("%s: choose a supplier or keep it open." % name)
         if choice == "open":
-            continue
-        if choice == "drop":
-            drops.append((ln, _check_drop_reason(name, reason)))
             continue
         option = next((o for o in ln["options"] if o["key"] == choice), None)
         if option is None:
@@ -805,82 +817,35 @@ def submit_choices(user, ref_id, choices):
         if qty < 1 or qty > top:
             raise InventoryError("%s: order between 1 and %d from %s." % (name, top, option["supplier_name"]))
         kind, _, ident = choice.partition(":")
-        key = (option["supplier_id"], option["kind"], int(ident) if kind == "q" else None)
-        groups.setdefault(key, []).append({"ln": ln, "qty": qty, "price": option["unit_price"]})
+        group = groups.setdefault((option["supplier_id"], option["kind"]),
+                                  {"rows": [], "quotation_ids": set()})
+        group["rows"].append({"ln": ln, "qty": qty, "price": option["unit_price"]})
+        if kind == "q":
+            group["quotation_ids"].add(int(ident))
     if not groups:
         raise InventoryError("Choose a supplier for at least one item. To stop ordering this REF, cancel it instead.")
 
     first_id, n = None, 0
-    for (sid, basis, qid), rows in groups.items():
+    for (sid, basis), group in groups.items():
+        qids = group["quotation_ids"]
+        qid = next(iter(qids)) if basis == "quotation" and len(qids) == 1 else None
         row = _b().one(
             "INSERT INTO purchase_approvals (ref_id, supplier_id, basis, quotation_id, decision, submitted_by) "
             "VALUES (:r, :s, :b, :q, 'pending', :u) RETURNING id", r=ref_id, s=sid, b=basis, q=qid, u=user["id"])
         first_id = first_id or row["id"]
         n += 1
         _b().execute("UPDATE purchase_approvals SET batch_id = :b WHERE id = :i", b=first_id, i=row["id"])
-        for r in rows:
+        for r in group["rows"]:
             _b().execute(
                 "INSERT INTO purchase_approval_items (approval_id, replenishment_item_id, item_id, qty, unit_price) "
                 "VALUES (:a, :ri, :i, :q, :p)", a=row["id"], ri=r["ln"]["ref_item_id"], i=r["ln"]["item_id"],
                 q=r["qty"], p=r["price"])
         supplier = _b().one("SELECT supplier_name FROM suppliers WHERE id = :i", i=sid)["supplier_name"]
         inv.write_audit(user["id"], "submit", "purchase_approvals", row["id"],
-                        new={"ref_no": ref["ref_no"], "supplier": supplier, "basis": basis, "lines": len(rows)})
-    notes = []
-    for ln, reason in drops:
-        notes += _drop(user, ref, ln, reason)
+                        new={"ref_no": ref["ref_no"], "supplier": supplier, "basis": basis,
+                             "lines": len(group["rows"])})
     cov.refresh_status(ref_id)
-    submit_choices.notes = notes          # read by the screen right after this call
     return first_id, ref["ref_no"], n
-
-
-def submit_for_approval(user, ref_id, basis, supplier_id, quotation_id):
-    """Single-supplier shortcut: send everything one supplier can supply. Items that supplier does not
-    offer stay OPEN on the REF (they are no longer lost), so another supplier can be chosen for them."""
-    ref = _ref_for_write(user, ref_id)
-    basis = (basis or "").strip().lower()
-    if basis not in ("quotation", "agreed_price"):
-        raise InventoryError("Choose how the price was set.")
-    try:
-        sid = int(str(supplier_id).strip())
-    except (TypeError, ValueError):
-        raise InventoryError("Choose the supplier.")
-    supplier = _b().one("SELECT * FROM suppliers WHERE id = :i AND is_active", i=sid)
-    if supplier is None:
-        raise InventoryError("Choose an active supplier.")
-    open_ = [c for c in cov.coverage(ref_id) if c["open"] > 0]
-    choices = {}
-    if basis == "quotation":
-        try:
-            qid = int(str(quotation_id).strip())
-        except (TypeError, ValueError):
-            raise InventoryError("Choose the quotation to use.")
-        q = _b().one("SELECT q.*, rq.ref_id FROM quotations q JOIN rfqs rq ON rq.id = q.rfq_id WHERE q.id = :q", q=qid)
-        if q is None or q["ref_id"] != ref_id or q["supplier_id"] != sid:
-            raise InventoryError("That quotation does not belong to this REF and supplier.")
-        if _dec(q["total_amount"]) <= 0:
-            raise InventoryError("That quotation has no priced items.")
-        if q.get("valid_until"):
-            valid = _date(q["valid_until"], "Quotation valid until")
-            if valid and valid < _today():
-                raise InventoryError("That quotation expired on %s. Record a fresh quotation first."
-                                     % valid.isoformat())
-        offered = {r["replenishment_item_id"]: r["qty_offered"] for r in
-                   _b().all("SELECT replenishment_item_id, qty_offered FROM quotation_items WHERE quotation_id = :q", q=qid)}
-        for c in open_:
-            have = offered.get(c["ref_item_id"], 0)
-            choices[c["ref_item_id"]] = (("q:%d" % qid, str(min(have, c["open"])), "") if have > 0
-                                         else ("open", "", ""))
-    else:
-        if not supplier["is_regular"]:
-            raise InventoryError("The agreed-price basis is only for a regular supplier.")
-        missing = [c["item_name"] for c in open_ if _valid_agreed_price(sid, c["item_id"]) is None]
-        if missing:
-            raise InventoryError("No valid agreed price for: %s." % ", ".join(missing))
-        for c in open_:
-            choices[c["ref_item_id"]] = ("a:%d" % sid, str(c["open"]), "")
-    first_id, ref_no, _n = submit_choices(user, ref_id, choices)
-    return first_id, ref_no
 
 
 def _check_drop_reason(name, reason):
