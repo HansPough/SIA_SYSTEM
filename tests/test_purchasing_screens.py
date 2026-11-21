@@ -109,16 +109,31 @@ class Base(unittest.TestCase):
         self.login("whmgr")
         return self.c.post("/purchasing/ref/%d/quotation/new" % ref_id, data=data)
 
-    def compare_quote(self, ref_id, supplier=SUP_A):
-        q = self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)
+    def choose_offer(self, ref_id, supplier=SUP_A, basis="quotation"):
+        """Post per-item choices: everything this supplier offers, other lines keep open."""
+        if basis == "quotation":
+            q = self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)
+            offered = {r["replenishment_item_id"] for r in self.be.all(
+                "SELECT replenishment_item_id FROM quotation_items WHERE quotation_id = :q AND qty_offered > 0",
+                q=q["id"])}
+            key = "q:%d" % q["id"]
+        else:
+            offered = None
+            key = "a:%d" % supplier
+        data = {}
+        for r in self.be.all("SELECT id FROM replenishment_items WHERE ref_id = :r", r=ref_id):
+            if offered is None or r["id"] in offered:
+                data["choice_%d" % r["id"]] = key
+            else:
+                data["choice_%d" % r["id"]] = "open"
         self.login("whmgr")
-        return self.c.post("/purchasing/ref/%d/compare" % ref_id,
-                           data={"basis": "quotation", "supplier_id": str(supplier), "quotation_id": str(q["id"])})
+        return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data)
+
+    def compare_quote(self, ref_id, supplier=SUP_A):
+        return self.choose_offer(ref_id, supplier, "quotation")
 
     def compare_agreed(self, ref_id, supplier=SUP_A):
-        self.login("whmgr")
-        return self.c.post("/purchasing/ref/%d/compare" % ref_id,
-                           data={"basis": "agreed_price", "supplier_id": str(supplier)})
+        return self.choose_offer(ref_id, supplier, "agreed_price")
 
     def approval_id(self):
         return self.be.one("SELECT id FROM purchase_approvals ORDER BY id DESC LIMIT 1")["id"]
@@ -151,7 +166,7 @@ class AlertTests(Base):
 
 
 class ReplenishmentFormTests(Base):
-    def test_ref_from_alert_is_prefilled_and_submitting_completes_alert(self):
+    def test_ref_from_alert_is_prefilled_and_submitting_removes_only_its_items(self):
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/new?alert_id=1").get_data(as_text=True)
         self.assertIn("ANSU 12R22.5 18PR AL505", page)
@@ -161,9 +176,23 @@ class ReplenishmentFormTests(Base):
         ref = self.be.one("SELECT * FROM replenishments")
         self.assertEqual((ref["status"], ref["warehouse_id"], ref["notification_id"]), ("submitted", WH, 1))
         self.assertIsNotNone(ref["submitted_at"])
-        self.assertEqual(self.be.one("SELECT status FROM notifications WHERE id = 1")["status"], "completed")
-        self.assertEqual(self.be.one("SELECT closed_by FROM notifications WHERE id = 1")["closed_by"], self.uid["whmgr"])
+        # B is not on this REF, so it stays on the alert for the next order
+        alert = self.be.one("SELECT status, closed_by FROM notifications WHERE id = 1")
+        self.assertEqual((alert["status"], alert["closed_by"]), ("active", None))
+        left = self.be.all("SELECT item_id FROM notification_items WHERE notification_id = 1")
+        self.assertEqual([r["item_id"] for r in left], [B])
         self.assertEqual(ref["ref_no"], "REF-%d-0001" % __import__("datetime").date.today().year)
+
+    def test_ref_covering_every_alert_item_completes_the_alert(self):
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/new", data={
+            "remarks": "both lines", "alert_id": "1",
+            "item_id[]": [str(A), str(B)], "qty_requested[]": ["30", "17"],
+            "reason[]": ["below_rop", "shortage"], "action": "submit_ref"})
+        self.assertEqual(r.status_code, 302)
+        alert = self.be.one("SELECT status, closed_by FROM notifications WHERE id = 1")
+        self.assertEqual((alert["status"], alert["closed_by"]), ("completed", self.uid["whmgr"]))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM notification_items WHERE notification_id = 1")["n"], 0)
 
     def test_draft_keeps_alert_active_until_submitted(self):
         r = self.make_ref(submit=False)
@@ -179,7 +208,9 @@ class ReplenishmentFormTests(Base):
         self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "submitted")
         sig = self.be.one("SELECT * FROM document_signatures")
         self.assertEqual((sig["doc_type"], sig["slot"], sig["signer_name"]), ("REF", "prepared_by", "whmgr"))
-        self.assertEqual(self.be.one("SELECT status FROM notifications WHERE id = 1")["status"], "completed")
+        self.assertEqual(self.be.one("SELECT status FROM notifications WHERE id = 1")["status"], "active")
+        left = self.be.all("SELECT item_id FROM notification_items WHERE notification_id = 1")
+        self.assertEqual([r["item_id"] for r in left], [B])
 
     def test_shortage_line_links_the_waiting_rf(self):
         self.make_ref(item=B, qty=4, reason="shortage")
@@ -225,6 +256,13 @@ class RfqQuotationTests(Base):
         self.assertIsNotNone(rfq["sent_at"])
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM rfq_suppliers")["n"], 2)
         self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "rfq_sent")
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("Suppliers and replies", page)
+        # one row for the RFQ, with both suppliers inside it (not one row per supplier)
+        self.assertEqual(page.count('<td class="nowrap">%s</td>' % rfq["rfq_no"]), 1)
+        self.assertIn("Sup A", page)
+        self.assertIn("Sup B", page)
         # a second round is allowed while items still have no supplier (see SplitOrderingTests); once
         # nothing is left to ask about, it is refused
         self.be.execute("UPDATE replenishment_items SET qty_dropped = qty_requested, dropped_reason = 'no longer needed'")
@@ -344,6 +382,10 @@ class ApprovalTests(Base):
     def test_regular_supplier_agreed_price(self):
         self.make_ref()
         ref_id = self.ref_id()
+        # no RFQ was sent: a regular supplier's agreed price is enough
+        self.assertIn("Choose suppliers", self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True))
+        self.assertIn("Sup A (agreed price)",
+                      self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True))
         r = self.compare_agreed(ref_id)
         self.assertEqual(r.status_code, 302)
         appr = self.be.one("SELECT * FROM purchase_approvals")
@@ -351,17 +393,20 @@ class ApprovalTests(Base):
         # 5 units of A at 10.00 (B is not on this REF)
         self.assertTrue(self.be.one("SELECT 1 FROM purchase_approvals") is not None)
 
-    def test_agreed_price_needs_a_regular_supplier_and_full_coverage(self):
+    def test_agreed_price_is_only_offered_for_regular_suppliers(self):
         self.make_ref()
         ref_id = self.ref_id()
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("Sup A (agreed price)", page)
+        self.assertNotIn("Sup B (agreed price)", page)
         r = self.compare_agreed(ref_id, supplier=SUP_B)        # not regular
         self.assertEqual(r.status_code, 200)
-        self.assertIn("regular supplier", " ".join(self.flashes(r)))
-        # regular supplier, but B has no agreed price on this REF? make a REF with B too
+        self.assertIn("did not offer this item", " ".join(self.flashes(r)))
+        # Sup A also has an agreed price for B, so a REF for B can be ordered the same way
         self.make_ref(item=B, qty=2)
         rid = self.ref_id()
         r = self.compare_agreed(rid, supplier=SUP_A)
-        self.assertEqual(r.status_code, 302)                   # Sup A has an agreed price for B too
+        self.assertEqual(r.status_code, 302)
 
     def test_owner_sees_the_approval_and_others_do_not(self):
         ref_id = self.full_quote_ref()
@@ -554,15 +599,14 @@ class SplitOrderingTests(Base):
         return self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)["id"]
 
     def choose(self, ref_id, **choices):
-        """choices: {item_id: 'q:<id>' | 'a:<id>' | 'open' | 'drop' | (choice, qty, reason)}"""
+        """choices: {item_id: 'q:<id>' | 'a:<id>' | 'open' | (choice, qty)}"""
         ids = self.line_ids(ref_id)
         data = {}
         for item, c in choices.items():
-            choice, qty, reason = c if isinstance(c, tuple) else (c, "", "")
+            choice, qty = c[:2] if isinstance(c, tuple) else (c, "")
             rid = ids[int(item)]
             data["choice_%d" % rid] = choice
             data["qty_%d" % rid] = qty
-            data["reason_%d" % rid] = reason
         self.login("whmgr")
         return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data, follow_redirects=True)
 
@@ -667,17 +711,21 @@ class SplitOrderingTests(Base):
         with self.app.app_context():
             self.assertEqual({l["item_id"]: l["open"] for l in cov.coverage(ref_id)}, {A: 8, B: 0})
 
-    # ---- dropping what nobody can supply ----
+    # ---- dropping what nobody can supply (from the REF page) ----
     def test_drop_needs_a_reason_and_lets_the_ref_finish(self):
         ref_id = self.two_item_ref()
         self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
-        r = self.choose(ref_id, **{str(A): ("drop", "", ""), str(B): "q:%d" % self.qid(SUP_A)})
+        self.choose(ref_id, **{str(A): "open", str(B): "q:%d" % self.qid(SUP_A)})
+        self.owner_decides()
+        ids = self.line_ids(ref_id)
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/%d/drop" % ref_id,
+                        data={"ref_item_id": str(ids[A]), "reason": ""}, follow_redirects=True)
         self.assertIn("write why you are dropping it", r.get_data(as_text=True))
-        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
-        self.choose(ref_id, **{str(A): ("drop", "", "discontinued by maker"), str(B): "q:%d" % self.qid(SUP_A)})
+        self.c.post("/purchasing/ref/%d/drop" % ref_id,
+                    data={"ref_item_id": str(ids[A]), "reason": "discontinued by maker"})
         row = self.be.one("SELECT qty_dropped, dropped_reason FROM replenishment_items WHERE item_id = :i", i=A)
         self.assertEqual((row["qty_dropped"], row["dropped_reason"]), (20, "discontinued by maker"))
-        self.owner_decides()
         self.assertEqual(self.ref_status(), "approved")                                   # nothing left open
         # receiving only what was ordered closes the REF
         self.be.execute("UPDATE replenishment_items SET qty_received = qty_requested WHERE item_id = :i", i=B)
@@ -788,7 +836,7 @@ class SplitOrderingTests(Base):
         self.login("whmgr")
         r = self.c.post("/purchasing/ref/%d/compare" % ref_id, data={"choice_%d" % ids[B]: "q:%d" % qa,
                         "choice_%d" % ids[A]: ""}, follow_redirects=True)
-        self.assertIn("choose a supplier, keep it open, or drop it", r.get_data(as_text=True))
+        self.assertIn("choose a supplier or keep it open", r.get_data(as_text=True))
         # a supplier that did not offer the item (Sup A never quoted A)
         self.assertIn("did not offer this item", attempt(**{str(A): "q:%d" % qa, str(B): "q:%d" % qa}))
         # more than the supplier offered
@@ -829,7 +877,7 @@ class SplitOrderingTests(Base):
         approvals = {a["supplier_id"]: a["basis"] for a in self.be.all("SELECT supplier_id, basis FROM purchase_approvals")}
         self.assertEqual(approvals, {SUP_A: "agreed_price", SUP_B: "quotation"})
 
-    def test_single_supplier_shortcut_keeps_unquoted_items_open(self):
+    def test_unquoted_items_stay_open_when_choosing_one_supplier(self):
         ref_id = self.two_item_ref()
         self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
         r = self.compare_quote(ref_id)
@@ -867,9 +915,9 @@ class MoreSuppliersTests(Base):
         ids = self.line_ids(ref_id)
         data = {}
         for item, c in choices.items():
-            choice, qty, reason = c if isinstance(c, tuple) else (c, "", "")
+            choice, qty = c[:2] if isinstance(c, tuple) else (c, "")
             rid = ids[int(item)]
-            data["choice_%d" % rid], data["qty_%d" % rid], data["reason_%d" % rid] = choice, qty, reason
+            data["choice_%d" % rid], data["qty_%d" % rid] = choice, qty
         self.login("whmgr")
         return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data, follow_redirects=True)
 
@@ -925,6 +973,26 @@ class MoreSuppliersTests(Base):
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_orders")["n"], 2)
         self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "approved")
 
+    def test_the_same_supplier_across_two_rounds_is_one_approval_and_one_po(self):
+        ref_id = self.two_item_ref()
+        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        first_q = self.qid(SUP_A)
+        self.send_rfq(ref_id, suppliers=(SUP_A,))                              # round 2 for item A
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])
+        second_q = self.qid(SUP_A)
+        self.assertNotEqual(first_q, second_q)
+        self.choose(ref_id, **{str(A): "q:%d" % second_q, str(B): "q:%d" % first_q})
+        approvals = self.be.all("SELECT * FROM purchase_approvals")
+        self.assertEqual(len(approvals), 1)                                    # one supplier, one approval
+        self.assertEqual((approvals[0]["supplier_id"], approvals[0]["basis"], approvals[0]["quotation_id"]),
+                         (SUP_A, "quotation", None))                       # two quotations, so no single ref
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approval_items")["n"], 2)
+        self.approve()
+        pos = self.be.all("SELECT * FROM purchase_orders")
+        self.assertEqual(len(pos), 1)                                          # one supplier, one PO
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_order_items WHERE po_id = :p",
+                                     p=pos[0]["id"])["n"], 2)
+
     def test_no_second_rfq_when_nothing_is_open_or_while_the_owner_decides(self):
         ref_id = self.two_item_ref()
         self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 5), (B, 10, "20.00", 5)])
@@ -951,30 +1019,37 @@ class MoreSuppliersTests(Base):
         self.assertNotIn("Give up on this item", page)          # giving up is not offered while choosing suppliers
         self.assertNotIn('value="drop"', page)
 
-    # ---- giving up is not dismissing ----
+    # ---- giving up is not dismissing (it happens on the REF page) ----
     def test_dropping_needs_a_real_reason(self):
         ref_id = self.two_item_ref()
-        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        ids = self.line_ids(ref_id)
+        self.login("whmgr")
         for bad in ("drop", "x", "no", "abc"):
-            r = self.choose(ref_id, **{str(A): ("drop", "", bad), str(B): "q:%d" % self.qid(SUP_A)})
+            r = self.c.post("/purchasing/ref/%d/drop" % ref_id,
+                            data={"ref_item_id": str(ids[A]), "reason": bad}, follow_redirects=True)
             self.assertIn("write a real reason", r.get_data(as_text=True), bad)
+        self.assertEqual(self.be.one("SELECT COALESCE(SUM(qty_dropped), 0) AS n FROM replenishment_items")["n"], 0)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
-        self.assertEqual(self.be.one("SELECT SUM(qty_dropped) AS n FROM replenishment_items")["n"], 0)
 
     def test_dropping_an_item_still_below_rop_raises_the_alert_again(self):
         ref_id = self.two_item_ref()
         self.reset_alerts({A: (3, 5), B: (50, 5)})                             # A is below its ROP, B is fine
-        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        ids = self.line_ids(ref_id)
         self.assertNotIn(A, self.active_alert_items())
-        r = self.choose(ref_id, **{str(A): ("drop", "", "supplier stopped selling it"), str(B): "q:%d" % self.qid(SUP_A)})
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/%d/drop" % ref_id,
+                        data={"ref_item_id": str(ids[A]), "reason": "supplier stopped selling it"},
+                        follow_redirects=True)
         self.assertIn(A, self.active_alert_items())                            # not forgotten: flagged again
         self.assertIn("still below its reorder point", r.get_data(as_text=True))
 
     def test_dropping_an_item_that_is_fine_raises_no_alert(self):
         ref_id = self.two_item_ref()
         self.reset_alerts({A: (50, 5), B: (50, 5)})                            # both are well stocked
-        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
-        self.choose(ref_id, **{str(A): ("drop", "", "customer cancelled order"), str(B): "q:%d" % self.qid(SUP_A)})
+        ids = self.line_ids(ref_id)
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/%d/drop" % ref_id,
+                    data={"ref_item_id": str(ids[A]), "reason": "customer cancelled order"})
         self.assertNotIn(A, self.active_alert_items())
 
     def test_dropping_from_the_ref_page_also_flags_the_item(self):

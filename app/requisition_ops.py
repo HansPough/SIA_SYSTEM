@@ -356,6 +356,7 @@ def cancel_rf(user, rf_id, reason):
         "SELECT rs.id, rs.item_id FROM reservations rs "
         "JOIN requisition_items x ON x.id = rs.rf_item_id "
         "WHERE x.rf_id = :r AND rs.status = 'reserved' ORDER BY rs.id", r=rf_id)
+    rf_items = _b().all("SELECT DISTINCT item_id FROM requisition_items WHERE rf_id = :r", r=rf_id)
     for res in held:
         inv.release_reservation(res["id"], "cancelled")
 
@@ -369,7 +370,7 @@ def cancel_rf(user, rf_id, reason):
                     old={"status": rf["status"]},
                     new={"status": "cancelled", "reason": reason,
                          "released_reservations": [r["id"] for r in held]})
-    # Freeing reserved stock can bring the warehouse back above ROP: let Inventory
-    # add or clear its alert rows for these items.
-    inv_ops.refresh_alerts(rf["warehouse_id"], [r["item_id"] for r in held])
+    # Freeing reserved stock can bring the warehouse back above ROP, and a cancellation
+    # removes a waiting RF from the backorder: let Inventory update its alert rows.
+    inv_ops.refresh_alerts(rf["warehouse_id"], [r["item_id"] for r in rf_items])
     return rf["rf_no"], len(held)

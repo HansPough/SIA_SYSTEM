@@ -35,6 +35,9 @@
     <div><dt>Delivered</dt><dd>{{ l.qty_delivered }}</dd></div>
     <div><dt>To reserve</dt><dd>{{ l.still_to_reserve }}</dd></div>
     <div><dt>To deliver</dt><dd>{{ l.still_to_deliver }}</dd></div>
+    {% if rf.status in ['open', 'partially_delivered'] %}
+    <div><dt>Backorder</dt><dd>{{ l.qty_requested - l.qty_delivered }}</dd></div>
+    {% endif %}
   </dl>
 </div>
 {% else %}

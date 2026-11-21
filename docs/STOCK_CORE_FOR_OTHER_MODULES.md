@@ -35,7 +35,7 @@ an unknown movement type. A failed save writes nothing, and it does not use up a
 | Document number | `inv.next_doc_no("RF")` gives `RF-2026-0001`. Types: ISS, ADJ, RF, REF, RFQ, PO, TS, AR, RM, DR |
 | Audit log | `inv.write_audit(user_id, "create", "requisitions", record_id, old=None, new={...})` |
 | Items at or below ROP | `inv.items_below_rop(location_id)` includes `suggested_qty` (max level minus available) |
-| After stock of items changed | `ops.refresh_alerts(location_id, [item_ids])` adds or clears the low-stock / restock alert rows |
+| After stock of items changed | `ops.refresh_alerts(location_id, [item_ids])` adds, converts or clears the low-stock / restock alert rows (at a warehouse it also follows the backorder owed to open RFs) |
 
 Movement types: `opening`, `supplier_receipt`, `transfer_out`, `transfer_in`, `issue`, `adjustment`.
 **Available = on hand minus reserved.** Reserved stock cannot be sold or adjusted away.
@@ -57,9 +57,12 @@ Movement types: `opening`, `supplier_receipt`, `transfer_out`, `transfer_in`, `i
 
 * The warehouse **restock alert** is the starting point of a REF. Lines that the RF queue could not fully reserve show up
   as `reason = 'shortage'`.
-* When you finish with an alert (REF created) set its `status = 'completed'`, `closed_by`, `closed_at`.
-  Inventory removes `below_rop` rows by itself once stock recovers, but **never removes `shortage` rows**, because only
-  Purchasing knows when that shortage is handled.
+* When you finish with an item (REF submitted) remove that item's row from the alert. Set the alert
+  `status = 'completed'`, `closed_by`, `closed_at` only when no item rows are left, so a REF that covers
+  only part of the alert does not silently drop the rest.
+* `suggested_qty` on a `shortage` row covers the units still owed to open RFs (or `max_level`, whichever is larger).
+  Inventory maintains those rows: `refresh_alerts` adds one while an RF is short, converts it to `below_rop` when
+  the RF need is gone but the item is still low, and removes it when the RF is fully reserved or stock recovers.
 * Goods arriving from a supplier (receiving memo): see Delivery below.
 
 ## Delivery (Module 4)

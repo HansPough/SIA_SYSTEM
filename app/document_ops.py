@@ -41,6 +41,11 @@ def _date(value):
     return _text(value, 10)
 
 
+def _note(*parts):
+    """A line note joined from the parts that apply. Notes are outside the signature hash."""
+    return " · ".join(str(p) for p in parts if p)
+
+
 def _status_label(doc_type, status):
     """What the status badge says. An approved PO is 'Ready to send', not 'Draft'."""
     raw = _text(status)
@@ -235,7 +240,8 @@ def _load_ts(doc_id, user):
     if ts is None:
         return None
     items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
-              "note": ("received %s" % l["qty_received"]) if l.get("qty_received") is not None else ""}
+              "note": _note("requested %s" % l["qty_requested"],
+                            ("received %s" % l["qty_received"]) if l.get("qty_received") is not None else None)}
              for l in ts["lines"]]
     return _document(
         "TS", TITLES["TS"], ts["ts_no"], ts["status"],
@@ -265,11 +271,16 @@ def _load_ar(doc_id, user):
     if ts is None:
         return None
     lines = _b().all(
-        "SELECT ari.*, i.item_code, i.item_name FROM acknowledgment_receipt_items ari "
-        "JOIN items i ON i.id = ari.item_id WHERE ari.ar_id = :i ORDER BY i.item_name", i=doc_id)
+        "SELECT ari.*, i.item_code, i.item_name, "
+        "COALESCE(x.qty_requested, ari.qty_expected) AS qty_requested "
+        "FROM acknowledgment_receipt_items ari JOIN items i ON i.id = ari.item_id "
+        "LEFT JOIN transfer_slip_items ti ON ti.id = ari.ts_item_id "
+        "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
+        "WHERE ari.ar_id = :i ORDER BY i.item_name", i=doc_id)
     items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_received"],
-              "note": ("%s rejected/short" % (l["qty_expected"] - l["qty_received"]))
-                      if l["qty_received"] < l["qty_expected"] else ""}
+              "note": _note("requested %s" % l["qty_requested"],
+                            ("%s rejected/short" % (l["qty_expected"] - l["qty_received"]))
+                            if l["qty_received"] < l["qty_expected"] else None)}
              for l in lines]
     return _document(
         "AR", TITLES["AR"], ar["ar_no"], "delivered_with_variance" if ar["has_variance"] else "delivered",

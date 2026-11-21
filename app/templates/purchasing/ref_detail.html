@@ -42,29 +42,37 @@
 {% if ref.partly_ordered %}<p class="note">Some items are still open.</p>{% endif %}
 
 <h2>RFQs and quotations</h2>
+<p class="note">One RFQ per round. A supplier who cannot quote a line can be asked again in a later round.</p>
 <div class="table-wrap"><table class="data">
-<thead><tr><th>RFQ no.</th><th>Supplier</th><th>Sent</th><th>Replied</th><th class="num">Total quoted</th></tr></thead>
+<thead><tr><th>RFQ no.</th><th>Suppliers and replies</th></tr></thead>
 <tbody>
-{% for r in ref.rfq_rows %}
-<tr><td class="nowrap">{{ r.rfq_no }}</td><td>{{ r.supplier_name }}</td>
-<td>{{ (r.sent_at|string)[:10] if r.sent_at else '–' }}</td>
-<td>{{ (r.replied_at|string)[:10] if r.replied_at else '–' }}</td>
-<td class="num">{% if r.total_quoted is not none %}{{ r.total_quoted|money }}{% else %}–{% endif %}</td></tr>
+{% for rfq_no, rows in ref.rfq_rows|groupby('rfq_no') %}
+<tr><td class="nowrap">{{ rfq_no }}</td>
+<td>
+  {% for r in rows %}
+  <div>{{ r.supplier_name }} &mdash;
+    {% if r.sent_at %}sent {{ (r.sent_at|string)[:10] }}{% else %}not recorded as sent{% endif %}
+    {% if r.replied_at %} &middot; replied {{ (r.replied_at|string)[:10] }}{% else %} &middot; no reply yet{% endif %}
+    {% if r.total_quoted is not none %} &middot; {{ r.total_quoted|money }}{% endif %}
+  </div>
+  {% endfor %}
+</td></tr>
 {% else %}
-<tr><td colspan="5" class="muted">No RFQ yet. Create one, or use a regular supplier's agreed price.</td></tr>
+<tr><td colspan="2" class="muted">No RFQ yet. Create one, or use a regular supplier's agreed price.</td></tr>
 {% endfor %}
 </tbody>
 </table></div>
 
 {% if ref.approvals %}
 <h2>Suppliers and orders</h2>
+<p class="note">One approval per supplier. Each approved supplier gets its own purchase order.</p>
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Supplier</th><th>Basis</th><th>Decision</th><th>Purchase order</th></tr></thead>
 <tbody>
 {% for a in ref.approvals %}
 {% set po = ref.pos|selectattr('approval_id', 'equalto', a.id)|first %}
 <tr><td>{{ a.supplier_name }}</td>
-<td>{{ 'Quotation' if a.basis == 'quotation' else 'Agreed price' }}</td>
+<td>{{ 'Quotation' if a.basis == 'quotation' else 'Mixed' if a.basis == 'mixed' else 'Agreed price' }}</td>
 <td>{{ m.status(a.decision) }}
   {% if current_role == 'owner' and a.decision == 'pending' %} <a class="btn small" href="{{ url_for('purchasing.approval_detail', approval_id=a.id) }}">decide</a>{% endif %}</td>
 <td>{% if po %}<a href="{{ url_for('purchasing.po_detail', po_id=po.id) }}">{{ po.po_no }}</a>

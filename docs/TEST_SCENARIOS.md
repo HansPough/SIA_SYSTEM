@@ -63,7 +63,7 @@ python scripts/seed_scenarios.py --reset --yes
 |---|---|---|---|
 | RF draft (not sent) | RF-2026-0002 | `shopmgr` | Open it and press 'Sign & send RF to warehouse' |
 | RF waiting in the warehouse queue | RF-2026-0003 | `whmgr` | RF queue > open > Reserve stock (signs 'Noted by') |
-| RF partly reserved (stock short) | RF-2026-0004 | `whmgr` | Short item raises a restock alert; make a REF from it. RF waits for the shortage |
+| RF partly reserved (stock short) | RF-2026-0004 | `whmgr` | The queue says "Partly ready — ship now": create the transfer for the reserved part; the rest stays on backorder and on the restock alert (make a REF from it) |
 | RF cancelled | RF-2026-0012 | `shopmgr` | Requisition forms > filter Cancelled |
 
 ## TS

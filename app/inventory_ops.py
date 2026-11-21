@@ -574,10 +574,25 @@ def _settings(item_id, location_id):
                     i=item_id, l=location_id) or {"rop": 0, "max_level": 0}
 
 
+def _rf_need(item_id, location_id):
+    """Units still owed to open RFs at this warehouse (backorder)."""
+    row = _b().one(
+        "SELECT COALESCE(SUM(x.qty_requested - x.qty_reserved), 0) AS need "
+        "FROM requisition_items x JOIN requisitions r ON r.id = x.rf_id "
+        "WHERE x.item_id = :i AND r.warehouse_id = :l "
+        "AND r.status IN ('open', 'partially_delivered') "
+        "AND x.qty_requested - x.qty_reserved > 0", i=item_id, l=location_id)
+    return int(row["need"] or 0) if row else 0
+
+
 def _upsert_alert_item(nid, item_id, location_id, reason):
     bal = inv.get_balance(item_id, location_id)
     st = _settings(item_id, location_id)
-    suggested = max(1, st["max_level"] - bal["available"])
+    target = st["max_level"]
+    if reason == "shortage":
+        # a shortage row is about the RFs waiting, not only about refilling to max
+        target = max(target, _rf_need(item_id, location_id))
+    suggested = max(1, target - bal["available"])
     _b().execute(
         "INSERT INTO notification_items (notification_id, item_id, current_qty, rop, suggested_qty, reason) "
         "VALUES (:n, :i, :c, :r, :s, :why) ON CONFLICT (notification_id, item_id) DO UPDATE SET "
@@ -594,19 +609,24 @@ def _close_if_empty(nid):
 
 def refresh_alerts(location_id, item_ids):
     """Call after stock of these items changed at this location (sale, adjustment, receipt, reservation).
-    Adds items that are now at or below ROP, removes the ones that recovered. Does not commit."""
+    Adds items that are now at or below ROP or still owed to an open RF, removes the ones that
+    recovered or were fully reserved. Does not commit."""
     low = {r["item_id"] for r in inv.items_below_rop(location_id)}
+    loc = get_location(location_id)
+    warehouse = loc is not None and loc["loc_type"] == "warehouse"
     for item_id in set(item_ids):
-        if item_id in low:
+        short = False
+        if warehouse:
+            need = _rf_need(item_id, location_id)
+            short = need > 0 and inv.get_available(item_id, location_id) < need
+        if short or item_id in low:
             nid = _active_notification(location_id, create=True)
-            existing = _b().one("SELECT reason FROM notification_items WHERE notification_id = :n AND item_id = :i",
-                                n=nid, i=item_id)
-            _upsert_alert_item(nid, item_id, location_id, existing["reason"] if existing else "below_rop")
+            _upsert_alert_item(nid, item_id, location_id, "shortage" if short else "below_rop")
         else:
             nid = _active_notification(location_id)
             if nid:
-                _b().execute("DELETE FROM notification_items WHERE notification_id = :n AND item_id = :i "
-                             "AND reason = 'below_rop'", n=nid, i=item_id)
+                _b().execute("DELETE FROM notification_items WHERE notification_id = :n AND item_id = :i",
+                             n=nid, i=item_id)
                 _close_if_empty(nid)
 
 
@@ -739,10 +759,12 @@ def _queue_stage(r):
         r.update(stage="In transit", tone="info", next_kind="transfer", next_label="Open transfer", next_primary=False)
     elif r["n_reservable"]:
         r.update(stage="Ready to reserve", tone="ok", next_kind="review", next_label="Review RF", next_primary=True)
+    elif r["n_reserved"]:
+        # stock is held: ship it now, the open lines stay on backorder
+        r.update(stage="Partly ready — ship now" if r["n_waiting"] else "Ready for transfer",
+                 tone="ok", next_kind="create", next_label="Create transfer", next_primary=True)
     elif r["n_waiting"]:
         r.update(stage="Waiting for stock", tone="danger", next_kind="review", next_label="Review RF", next_primary=False)
-    elif r["n_reserved"]:
-        r.update(stage="Ready for transfer", tone="ok", next_kind="create", next_label="Create transfer", next_primary=True)
     else:
         r.update(stage=str(r["status"]).replace("_", " ").capitalize(), tone="warn", next_kind="review",
                  next_label="Review RF", next_primary=False)
@@ -829,15 +851,19 @@ def reserve_rf(user, rf_id, pairs):
         ln["remaining"] -= qty
         reserved_now += qty
         touched.append(ln["item_id"])
-    short = [ln["item_id"] for ln in rf["lines"] if ln["remaining"] > 0]
+    waiting = [ln["item_id"] for ln in rf["lines"] if ln["remaining"] > 0]
     if not reserved_now:
         if not any(ln["suggest"] > 0 for ln in rf["lines"]):
-            add_shortages(rf["warehouse_id"], short)          # keep the shortage on the restock alert
+            add_shortages(rf["warehouse_id"], waiting)        # keep the shortage on the restock alert
             raise WaitingForStock("Nothing to reserve: no stock is available yet. "
                                   "%s is waiting and the item is on the restock alert." % rf["rf_no"])
         raise InventoryError("Enter how many units to reserve.")
     if touched:
         refresh_alerts(rf["warehouse_id"], touched)
+    # Only lines the warehouse cannot cover now are a shortage; a line left
+    # unreserved while stock sits there is simply still waiting to be reserved.
+    short = [ln["item_id"] for ln in rf["lines"]
+             if ln["remaining"] > 0 and inv.get_available(ln["item_id"], rf["warehouse_id"]) < ln["remaining"]]
     if short:
         add_shortages(rf["warehouse_id"], short)
     inv.write_audit(user["id"], "reserve", "requisitions", rf_id,

@@ -297,32 +297,22 @@ def ref_compare(ref_id):
         return redirect(url_for("purchasing.ref_list"))
     if request.method == "POST":
         try:
-            if any(k.startswith("choice_") for k in request.form):
-                choices = {}
-                for k in request.form:
-                    if k.startswith("choice_"):
-                        rid = int(k[len("choice_"):])
-                        choices[rid] = (request.form.get(k), request.form.get("qty_%d" % rid),
-                                        request.form.get("reason_%d" % rid))
-                _first, _no, n = pur.submit_choices(user, ref_id, choices)
-                notes = list(getattr(pur.submit_choices, "notes", []))
-            else:   # one supplier for everything it can supply
-                pur.submit_for_approval(user, ref_id, request.form.get("basis"),
-                                        request.form.get("supplier_id"), request.form.get("quotation_id"))
-                n = 1
-                notes = []
+            choices = {}
+            for k in request.form:
+                if k.startswith("choice_"):
+                    rid = int(k[len("choice_"):])
+                    choices[rid] = (request.form.get(k), request.form.get("qty_%d" % rid))
+            _first, _no, n = pur.submit_choices(user, ref_id, choices)
             inv.commit()
         except (InventoryError, ValueError) as e:
             inv.rollback()
             flash(str(e) if isinstance(e, InventoryError) else "Choose a supplier for every item.", "error")
         else:
             left = pur.get_ref(ref_id, user)["has_open"]
-            flash("Sent for approval: %d supplier%s.%s" % (
+            flash("Sent for approval: %d supplier%s. Each approved supplier gets its own purchase order.%s" % (
                 n, "" if n == 1 else "s",
                 " Some items are still open." if left else ""),
                 "success")
-            for note in notes:
-                flash(note, "info")
             return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
     return render_template("purchasing/ref_compare.html", data=data, f=request.form)
 

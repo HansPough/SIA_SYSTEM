@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from app import create_app
+from app import inventory_ops as inv_ops
 from app import inventory_service as inv
 from sqlite_schema import SqliteBackend, next_invoice
 
@@ -390,6 +391,55 @@ class RfQueueTests(Base):
         self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
                     "item_id[]": [str(A)], "qty_requested[]": ["3"]})
         self.assertEqual([x for x in self.alerts("restock") if x["reason"] == "shortage"], [])
+
+    def test_partly_reserved_rf_offers_to_ship_what_is_held_now(self):
+        self.make_rf([(B, 9)])                                            # only 4 of B in the warehouse
+        self.login("whmgr")
+        self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["4"]})
+        html = self.queue()
+        self.assertIn("Partly ready — ship now", html)                    # not "Waiting for stock"
+        self.assertRegex(html, r'class="btn small primary" href="/delivery/transfers/new\?rf_id=1">Create transfer</a>')
+
+    def test_reserving_less_than_available_is_not_a_shortage(self):
+        self.make_rf([(A, 10)])                                           # 20 of A on hand
+        self.login("whmgr")
+        self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["4"]})
+        self.assertEqual([x for x in self.alerts("restock") if x["reason"] == "shortage"], [])
+        self.assertIn("Ready to reserve", self.queue())                   # stock is there, just not reserved yet
+
+    def test_shortage_suggestion_covers_the_units_still_owed_to_the_rf(self):
+        self.be.execute("UPDATE item_location_settings SET max_level = 5 WHERE item_id = :i AND location_id = :l",
+                        i=B, l=WH)
+        self.be.commit()
+        self.login("shopmgr")
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(B)], "qty_requested[]": ["9"]})
+        row = [x for x in self.alerts("restock") if x["item_id"] == B][0]
+        # 4 available, 9 owed: order the 5 still needed, not just the 1 left below max_level
+        self.assertEqual((row["reason"], row["suggested_qty"]), ("shortage", 5))
+
+    def test_cancelling_a_waiting_rf_takes_its_shortage_off_the_alert(self):
+        self.login("shopmgr")
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(B)], "qty_requested[]": ["9"]})
+        self.assertEqual(len([x for x in self.alerts("restock") if x["item_id"] == B]), 1)
+        r = self.c.post("/requisition/rf/1/cancel", data={"cancel_reason": "not needed any more"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual([x for x in self.alerts("restock") if x["item_id"] == B], [])
+
+    def test_shortage_row_follows_the_rf_until_stock_covers_it(self):
+        self.login("shopmgr")
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(B)], "qty_requested[]": ["9"]})
+        self.assertEqual(len([x for x in self.alerts("restock") if x["item_id"] == B]), 1)
+        inv.change_stock(B, WH, 2, "supplier_receipt")                    # 6 on hand: above ROP, still short
+        inv_ops.refresh_alerts(WH, [B])
+        self.be.commit()
+        self.assertEqual([x["reason"] for x in self.alerts("restock") if x["item_id"] == B], ["shortage"])
+        inv.change_stock(B, WH, 20, "supplier_receipt")                   # now covers the RF
+        inv_ops.refresh_alerts(WH, [B])
+        self.be.commit()
+        self.assertEqual([x for x in self.alerts("restock") if x["item_id"] == B], [])
 
     def test_only_the_warehouse_manager_of_that_warehouse(self):
         self.make_rf([(A, 2)])

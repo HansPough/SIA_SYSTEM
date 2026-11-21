@@ -16,7 +16,7 @@ The business flow is unchanged, and every screen now has exactly one job:
 | Load, sign, release | Transfer page → Load check → Driver sign → Release | Warehouse staff / manager |
 | Receive at shop | Delivery → Incoming deliveries → Receive | Shop manager |
 | Restock warehouse | Purchasing → Restock alerts → Replenishments (REF) | Warehouse manager |
-| Quote and choose | REF page → RFQ → Quotation → Choose suppliers | Warehouse manager |
+| Quote and choose | REF page → RFQ (one per round) → Quotation → Choose suppliers (per-item split preview) | Warehouse manager |
 | Approve | To do → Approvals | Owner |
 | Send and receive goods | Purchase orders (PO) → Supplier receiving | Warehouse manager / staff |
 
@@ -83,8 +83,9 @@ There are three layers, and they agree because they use the same numbers:
 
 Business notifications are created by the stock core, not by screens: a sale or receipt that
 crosses the ROP opens the low-stock/restock alert, an RF the warehouse cannot cover adds a shortage
-row, and finishing the REF closes the alert. Snoozing keeps the alert open but silent until the
-date passes.
+row, and submitting a REF removes that REF's items from the alert (the alert closes when empty).
+A partly reserved RF stays in the queue as "Partly ready — ship now" so the available stock moves
+while the rest waits on backorder. Snoozing keeps the alert open but silent until the date passes.
 
 ## 5. Live updates between users
 
