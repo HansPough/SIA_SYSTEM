@@ -228,6 +228,21 @@ class DocumentTests(Base):
         pdf = self.c.get("/documents/TS/1.pdf").get_data()
         self.assertGreaterEqual(pdf.count(b"/Subtype /Image"), 2)        # logo + at least the driver's signature
 
+    def test_printable_screen_header_keeps_parties_and_details_in_two_aligned_columns(self):
+        """From/To and the detail pairs share the same two columns, whatever the document."""
+        self.chain()
+        self.receive()
+        self.login("owner")
+        for path in ("/documents/TS/1", "/documents/AR/1"):
+            html = self.c.get(path).get_data(as_text=True)
+            self.assertEqual(html.count('<div class="doc-parties">'), 1)
+            self.assertEqual(html.count('<dl class="info doc-meta">'), 1)
+        css = self.c.get("/static/css/style.css").get_data(as_text=True)
+        two_cols = r"grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)"
+        self.assertRegex(css, r"\.doc-parties\s*\{[^}]*" + two_cols)
+        self.assertRegex(css, r"dl\.info\.doc-meta\s*\{[^}]*" + two_cols)      # never the auto-fill 3-4 column grid
+        self.assertNotRegex(css, r"\.doc-parties\s*\{[^}]*grid-template-columns:\s*1fr;")
+
 
     # ---- the shop manager must check the TS first ----
     def test_ar_cannot_be_signed_until_every_line_is_counted(self):

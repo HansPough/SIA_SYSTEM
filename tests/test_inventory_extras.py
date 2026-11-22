@@ -426,6 +426,19 @@ class RfQueueTests(Base):
         shortage = [x for x in self.alerts("restock") if x["item_id"] == A]
         self.assertEqual(len(shortage), 1)                                # on the restock alert, once
 
+    def test_rf_detail_shows_its_lines_as_one_items_table(self):
+        self.login("shopmgr")
+        self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",
+                    "item_id[]": [str(A), str(B)], "qty_requested[]": ["3", "2"]})
+        self.login("shopmgr")
+        page = self.c.get("/requisition/rf/1").get_data(as_text=True)
+        table = re.search(r"<table class=\"data\">.*?</table>", page, re.S).group(0)
+        for heading in ("Item", "Requested", "Reserved", "Delivered", "To reserve", "To deliver"):
+            self.assertIn(heading, table)
+        self.assertIn("TIR-0001", table)
+        self.assertIn("TIR-0002", table)
+        self.assertNotIn('class="side-item"', page)
+
     def test_a_sent_rf_flags_its_shortage_without_anyone_pressing_reserve(self):
         self.login("shopmgr")                                             # the warehouse has only 4 of B
         self.c.post("/requisition/rf/new", data={"warehouse_id": "1", "remarks": "", "action": "submit_rf",

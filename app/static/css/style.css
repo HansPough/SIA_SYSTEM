@@ -382,19 +382,20 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .doc-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .doc { margin-top: 0; }
 .doc-tools { display: flex; justify-content: flex-end; gap: 8px; margin: -4px 0 14px; }
-.doc-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.doc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
 .doc-brand { display: flex; align-items: center; gap: 14px; }
 .doc-logo { width: 58px; height: 58px; object-fit: contain; }
 .doc-company { font-weight: 800; letter-spacing: .1em; font-size: 16px; }
-.doc-id { text-align: right; }
+.doc-id { text-align: right; margin-left: auto; }
 .doc-title { margin: 0; font-size: 20px; }
 .doc-no { font-size: 15px; font-weight: 700; letter-spacing: .04em; margin: 2px 0; }
 .doc-date { color: var(--muted); font-size: 12.5px; }
 .doc-status { margin-top: 6px; }
-.doc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 18px 0; }
+.doc-parties { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin: 18px 0; }
 .doc-parties span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px; }
 .doc-parties strong { font-size: 14px; }
-.doc-meta { margin: 14px 0 6px; }
+dl.info.doc-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 24px;
+  margin: 14px 0 6px; }
 .doc-items { margin-top: 4px; }
 .doc-notes p { margin: 4px 0; }
 .sign-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 22px; margin-top: 10px; }
@@ -409,7 +410,7 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 .doc-foot { margin-top: 22px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 7px; }
 @media print {
   /* a printed page is narrow, but it is not a phone: keep the two-column document layout */
-  .doc-parties { grid-template-columns: 1fr 1fr !important; }
+  .doc-parties { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
   .doc ~ .doc { break-before: page; }              /* a second document (a TS and its AR) starts on its own page */
   .doc { break-inside: avoid; }
   body.print-one .doc:not(.print-target) { display: none !important; }
@@ -458,7 +459,6 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
   .content { padding: 20px 16px 40px; }
   .grid { grid-template-columns: 1fr; }
   .field.span-2 { grid-column: span 1; }
-  .doc-parties { grid-template-columns: 1fr; }
   .topbar { padding: 0 14px; gap: 10px; }
   .brand { min-width: 0; }
   .brand-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -477,6 +477,8 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
   .actions { gap: 8px; }
   .actions .btn { flex: 1 1 auto; justify-content: center; }
   .toast-stack { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
+  .doc-parties { gap: 14px; }
+  dl.info.doc-meta { gap: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 /* ---------- tabs (two related screens under one menu item) ---------- */

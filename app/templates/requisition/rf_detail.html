@@ -25,25 +25,20 @@
 </dl>
 
 <h2>Items</h2>
-<div class="side-list">
+{% set show_backorder = rf.status in ['open', 'partially_delivered'] %}
+<div class="table-wrap"><table class="data">
+<thead><tr><th>Item</th><th class="num">Requested</th><th class="num">Reserved</th><th class="num">Delivered</th><th class="num">To reserve</th><th class="num">To deliver</th>{% if show_backorder %}<th class="num">Backorder</th>{% endif %}</tr></thead>
+<tbody>
 {% for l in rf.lines %}
-<div class="side-item">
-  <strong>{{ l.item_name }}</strong><small>{{ l.item_code }}</small>
-  <dl class="mini">
-    <div><dt>Requested</dt><dd>{{ l.qty_requested }}</dd></div>
-    <div><dt>Reserved</dt><dd>{{ l.qty_reserved }}</dd></div>
-    <div><dt>Delivered</dt><dd>{{ l.qty_delivered }}</dd></div>
-    <div><dt>To reserve</dt><dd>{{ l.still_to_reserve }}</dd></div>
-    <div><dt>To deliver</dt><dd>{{ l.still_to_deliver }}</dd></div>
-    {% if rf.status in ['open', 'partially_delivered'] %}
-    <div><dt>Backorder</dt><dd>{{ l.qty_requested - l.qty_delivered }}</dd></div>
-    {% endif %}
-  </dl>
-</div>
+<tr><td>{{ l.item_name }}<small>{{ l.item_code }}</small></td>
+<td class="num">{{ l.qty_requested }}</td><td class="num">{{ l.qty_reserved }}</td><td class="num">{{ l.qty_delivered }}</td>
+<td class="num">{{ l.still_to_reserve }}</td><td class="num">{{ l.still_to_deliver }}</td>
+{% if show_backorder %}<td class="num">{{ l.qty_requested - l.qty_delivered }}</td>{% endif %}</tr>
 {% else %}
-<p class="muted">No items.</p>
+<tr><td colspan="{{ 7 if show_backorder else 6 }}" class="muted">No items.</td></tr>
 {% endfor %}
-</div>
+</tbody>
+</table></div>
 
 <h2>Transfer slips</h2>
 <div class="table-wrap"><table class="data">
