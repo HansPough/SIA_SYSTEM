@@ -8,7 +8,7 @@
   {{ m.field('Adjustment no.', 'adj_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('Location', 'location', 'text', value=location.code ~ ' (' ~ location.loc_type ~ ')', readonly=True) }}
   <div class="field span-1"><label for="reason">Reason<span class="req">*</span></label>
-    <select id="reason" name="reason"><option value="">-- select --</option>{% for r in ['Count difference', 'Damaged', 'Lost', 'Delivery variance', 'Other'] %}<option {{ 'selected' if f.get('reason') == r }}>{{ r }}</option>{% endfor %}</select></div>
+    <select id="reason" name="reason"><option value="">-- select --</option>{% for r in ['Damaged', 'Lost', 'Delivery variance', 'Other'] %}<option {{ 'selected' if f.get('reason') == r }}>{{ r }}</option>{% endfor %}</select></div>
   {{ m.field('Linked AR no. (optional)', 'ar_no', 'text', value=f.get('ar_no', '')) }}
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
 </div>
@@ -30,7 +30,7 @@
 </table></div>
 <div class="actions">
   <button type="submit" name="action" value="submit_for_approval" class="btn primary">Save adjustment</button>
-  <a class="btn ghost" href="{{ url_for('inventory.adjustment_list') }}">Back</a>
+  <a class="btn ghost" href="{{ url_for('inventory.stock_list') if request.args.get('from') == 'stock' else url_for('inventory.adjustment_list') }}">Back</a>
 </div>
 </form>
 

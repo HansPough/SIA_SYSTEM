@@ -115,10 +115,25 @@ every 9 seconds (and immediately when the tab becomes visible).
 ## 7. Stock count and adjustments
 
 * **Stock** has two shortcuts in its header: **Stock count** and **Adjust stock**.
+* The two screens are separate jobs: **Stock count** is the only place a count difference is
+  entered (reason fixed to "Count difference"); **Adjust stock** is for a known cause
+  (Damaged, Lost, Delivery variance, Other), optionally linked to an AR.
 * The count sheet and the new adjustment are **search-first**: the full item list is not printed.
   Type a name or code and a short result list appears; pick the item, change the quantity, save.
-  Items that match are not touched.
+  Items that match are not touched. The same box matches both the **item code** and the **name**,
+  and picking an item puts the cursor in its **Counted qty** box; **Enter** there goes back to the
+  search box for the next item.
+* Picking an item that is **already on the sheet** does not add a second row: the existing row is
+  highlighted for a moment, the page scrolls to it and its Counted box gets focus.
+* Next to the search, **Category** and **Shelf** selects and **Add matching items** add every item
+  that matches both filters (either left on *all*), including items with 0 on hand. Use it for a
+  monthly audit when a shelf or a category must be checked line by line.
+* Adding matching items only **adds rows**; it never removes or replaces what is already on the
+  sheet, and rows already there are skipped. Loading *all* and then a single shelf therefore adds
+  nothing new — pick the shelf first, or remove the rows you do not want.
 * **Staff** save a request; their manager approves it.
+* **Back** on the new adjustment returns to **Stock** when the form was opened from Stock, and to
+  the adjustments list when it was opened from there. The count sheet always returns to Stock.
 * **A manager's own count or adjustment is applied on save** (`auto_approved`), because a manager
   does not approve their own work. The stock ledger records it like any approved adjustment.
 

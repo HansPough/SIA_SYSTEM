@@ -48,12 +48,12 @@
   <input type="hidden" name="ref_item_id[]" value="{{ l.ref_item_id }}"></td>
 <td class="num">{{ l.qty_requested }}</td>
 <td><input type="number" min="0" name="qty_offered[]" value="{{ qty_vals[i] if qty_vals|length > i else (ex.qty_offered if ex else (0 if data.existing else l.qty_requested)) }}"></td>
-<td><input type="number" min="0" step="0.01" name="unit_price[]" value="{{ price_vals[i] if price_vals|length > i else (ex.unit_price if ex else agreed) }}"></td>
+<td><input type="number" min="0.01" step="0.01" name="unit_price[]" value="{{ price_vals[i] if price_vals|length > i else (ex.unit_price if ex else agreed) }}"></td>
 <td><input type="number" min="0" name="lead_time_days[]" value="{{ lead_vals[i] if lead_vals|length > i else (ex.lead_time_days if ex and ex.lead_time_days is not none else '') }}"></td></tr>
 {% endfor %}
 </tbody>
 </table></div>
-<p class="muted">Leave the quantity at 0 if the supplier did not offer the item.</p>
+<p class="muted">Leave the quantity at 0 if the supplier did not offer the item. The unit price must be more than zero.</p>
 
 <div class="actions">
   <button type="submit" name="action" value="save_quotation" class="btn primary">Save quotation</button>

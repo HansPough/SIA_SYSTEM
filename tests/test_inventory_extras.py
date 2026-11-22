@@ -1,5 +1,7 @@
 """Alerts, voiding a sale, the RF queue, brands / patterns and reports."""
+import json
 import os
+import re
 import sys
 import unittest
 
@@ -77,7 +79,7 @@ class AlertTests(Base):
         self.sell(6)                                       # 10 -> 4
         self.assertEqual(len(self.alerts()), 1)
         self.login("shopstaff")
-        self.c.post("/inventory/adjustments/new", data={"reason": "Count difference", "item_id[]": [str(A)], "qty_actual[]": ["12"]})
+        self.c.post("/inventory/adjustments/new", data={"reason": "Other", "item_id[]": [str(A)], "qty_actual[]": ["12"]})
         self.login("shopmgr")
         self.c.post("/inventory/adjustments/1/review", data={"decision": "approve", "review_remarks": "recount"})
         self.assertEqual(self.bal(A, SHOP)["on_hand"], 12)
@@ -155,6 +157,51 @@ class StockCountTests(Base):
             "item_id[]": [str(A), str(B)], "qty_actual[]": ["10", "0"]})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM stock_adjustments")["n"], 0)
+
+    def test_count_difference_is_only_entered_on_the_count_screen(self):
+        self.login("shopmgr")
+        page = self.c.get("/inventory/adjustments/new").get_data(as_text=True)
+        self.assertNotIn("Count difference", page)                        # not a manual adjustment reason
+        for reason in ("Other", "Damaged", "Lost", "Delivery variance"):
+            self.assertIn(reason, page)
+
+    def test_count_sheet_can_load_a_category_or_shelf_including_zero_stock(self):
+        self.be.execute("UPDATE item_location_settings SET rack = 'A1' WHERE item_id = :i AND location_id = :l",
+                        i=A, l=SHOP)
+        self.be.commit()
+        self.login("shopmgr")
+        page = self.c.get("/inventory/count").get_data(as_text=True)
+        self.assertIn('data-load-filter="category"', page)
+        self.assertIn('data-load-filter="rack"', page)
+        blob = re.search(r'id="item-data">(.*?)</script>', page, re.S).group(1)
+        items = {i["item_code"]: i for i in json.loads(blob)}
+        self.assertEqual(items["TIR-0001"]["category"], "tire")
+        self.assertEqual(items["TIR-0001"]["rack"], "A1")
+        self.assertEqual(items["TIR-0002"]["on_hand"], 0)                 # nothing at this shop, still loadable
+
+    def test_count_detail_and_review_name_the_item_field_count_note(self):
+        self.login("shopstaff")
+        r = self.c.post("/inventory/count", data={
+            "location": str(SHOP), "remarks": "cycle count",
+            "item_id[]": [str(A)], "qty_actual[]": ["8"], "item_note[]": ["one missing"]})
+        adj_id = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        self.login("shopmgr")
+        for url in ("/inventory/adjustments/%d" % adj_id, "/inventory/adjustments/%d/review" % adj_id):
+            page = self.c.get(url).get_data(as_text=True)
+            self.assertIn("Count note", page)                             # not the generic "Remarks"
+            self.assertIn("one missing", page)                            # the staff note is visible to the manager
+
+    def test_count_sheet_keeps_the_rows_and_remarks_when_an_entry_is_invalid(self):
+        self.login("shopstaff")
+        page = self.c.post("/inventory/count", data={
+            "location": str(SHOP), "remarks": "month end count",
+            "item_id[]": [str(A)], "qty_actual[]": ["abc"], "item_note[]": ["one missing"]}).get_data(as_text=True)
+        self.assertIn("whole number", page)
+        self.assertIn("TIR-0001", page)                                   # the row is still on the sheet
+        self.assertIn('value="%d"' % A, page)
+        self.assertIn("value=\"one missing\"", page)
+        self.assertIn("month end count", page)                            # the remark is kept
+        self.assertNotIn("why this count was done", page)                 # no helper text under Remarks
 
 
 class VoidTests(Base):

@@ -14,9 +14,10 @@
   {{ m.field('Remarks', 'review_remarks', 'textarea', value=f.get('review_remarks', ''), required=True, col=2) }}
 </div>
 <h2>Items</h2>
+{% set note_label = 'Count note' if adj.reason == 'count_difference' else 'Item remarks' %}
 <div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">System qty</th><th class="num">Actual qty</th><th class="num">Difference</th></tr></thead>
-<tbody>{% for l in adj.lines %}<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_system }}</td><td class="num">{{ l.qty_actual }}</td><td class="num">{{ '%+d' % l.qty_diff }}</td></tr>{% endfor %}</tbody>
+<thead><tr><th>Item</th><th class="num">System qty</th><th class="num">Actual qty</th><th class="num">Difference</th><th>{{ note_label }}</th></tr></thead>
+<tbody>{% for l in adj.lines %}<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_system }}</td><td class="num">{{ l.qty_actual }}</td><td class="num">{{ '%+d' % l.qty_diff }}</td><td>{{ l.item_remarks or '' }}</td></tr>{% endfor %}</tbody>
 </table></div>
 <div class="actions">
   <button type="submit" name="action" value="submit_decision" class="btn primary">Submit decision</button>

@@ -324,13 +324,15 @@ class RfqQuotationTests(Base):
         self.assertIsNone(row["sent_at"])
         self.assertIsNotNone(row["replied_at"])
 
-    def test_quotation_rejects_negative_price(self):
+    def test_quotation_rejects_zero_or_negative_price(self):
         self.make_ref()
         ref_id = self.ref_id()
         self.send_rfq(ref_id)
-        r = self.quote(ref_id, lines=[(A, 2, "-5", 3)])
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("cannot be negative", " ".join(self.flashes(r)))
+        for bad in ("-5", "0", "0.00"):
+            r = self.quote(ref_id, lines=[(A, 2, bad, 3)])
+            self.assertEqual(r.status_code, 200, bad)
+            self.assertIn("enter the unit price", " ".join(self.flashes(r)), bad)
+            self.assertIn("set its quantity to 0", " ".join(self.flashes(r)), bad)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM quotations")["n"], 0)
 
 
@@ -572,6 +574,16 @@ class SupplierTests(Base):
         self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(float(rows[0]["agreed_price"]), 15.0, places=2)
 
+    def test_zero_agreed_price_is_refused(self):
+        self.login("whmgr")
+        r = self.c.post("/purchasing/suppliers/1/edit", data={
+            "supplier_name": "Sup A", "email": "ana@supa.test", "is_regular": "on", "is_active": "on",
+            "item_id[]": [str(A)], "agreed_price[]": ["0"], "valid_from[]": ["2026-06-01"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("must be more than zero", " ".join(self.flashes(r)))
+        self.assertEqual(self.be.one(
+            "SELECT COUNT(*) AS n FROM supplier_items WHERE valid_from = '2026-06-01'")["n"], 0)
+
     def test_owner_and_manager_manage_suppliers_but_staff_cannot_even_view(self):
         for who in ("owner", "whmgr"):
             self.login(who)
@@ -664,6 +676,22 @@ class SplitOrderingTests(Base):
         sigs = [(x["doc_type"], x["slot"]) for x in self.be.all("SELECT * FROM document_signatures ORDER BY id")]
         self.assertEqual(sigs.count(("REF", "approved_by")), 1)
         self.assertEqual(sigs.count(("PO", "approved_by")), 2)
+
+    def test_a_stored_zero_price_is_not_an_offer(self):
+        """Old data with a 0 price must not become the 'cheapest' preselected supplier."""
+        ref_id = self.two_item_ref()
+        self.quote(ref_id, SUP_B, lines=[(A, 20, "10.00", 7)])
+        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        qi = self.be.one("SELECT id FROM quotation_items WHERE quotation_id = :q", q=self.qid(SUP_A))
+        self.be.execute("UPDATE quotation_items SET unit_price = 0 WHERE id = :i", i=qi["id"])
+        self.be.commit()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertNotIn('value="q:%d"' % self.qid(SUP_A), page)                 # not offered for B
+        self.assertIn("replied without a price", page)                          # but not silently lost
+        r = self.choose(ref_id, **{str(B): "q:%d" % self.qid(SUP_A), str(A): "q:%d" % self.qid(SUP_B)})
+        self.assertIn("did not offer this item", r.get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
 
     def test_default_picks_the_cheapest_supplier_that_can_cover_the_whole_quantity(self):
         ref_id = self.two_item_ref()

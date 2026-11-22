@@ -181,6 +181,15 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(r.status_code, 302, self.flashes(r))
         return int(r.headers["Location"].rstrip("/").split("/")[-1])
 
+    def test_back_from_the_adjustment_form_returns_to_where_it_was_opened(self):
+        self.login("shopstaff")
+        stock = self.c.get("/inventory/stock").get_data(as_text=True)
+        self.assertIn('href="/inventory/adjustments/new?from=stock"', stock)
+        form = self.c.get("/inventory/adjustments/new?from=stock").get_data(as_text=True)
+        self.assertIn('<a class="btn ghost" href="/inventory/stock">Back</a>', form)
+        plain = self.c.get("/inventory/adjustments/new").get_data(as_text=True)
+        self.assertIn('<a class="btn ghost" href="/inventory/adjustments">Back</a>', plain)
+
     def test_adjustment_waits_for_manager_then_changes_stock(self):
         adj = self.raise_adjustment("whstaff")
         self.assertEqual(self.bal(TIRE_A, 1), 10)                                  # nothing yet

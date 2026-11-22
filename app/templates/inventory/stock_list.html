@@ -5,7 +5,7 @@
 <div class="page-head"><h1>Stock</h1>
   <a class="btn" href="{{ url_for('inventory.count_sheet') }}">Stock count</a>
   {% if current_role in ['shop_manager', 'shop_staff', 'warehouse_manager', 'warehouse_staff'] %}
-  <a class="btn primary" href="{{ url_for('inventory.adjustment_new') }}">Adjust stock</a>
+  <a class="btn primary" href="{{ url_for('inventory.adjustment_new', **{'from': 'stock'}) }}">Adjust stock</a>
   {% endif %}
 </div>
 <div class="card">

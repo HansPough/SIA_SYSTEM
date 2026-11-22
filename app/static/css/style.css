@@ -218,6 +218,7 @@ input[type=checkbox], input[type=radio] { width: 17px; height: 17px; accent-colo
 small { color: var(--muted); display: block; margin-top: 3px; font-size: 12px; }
 .sign-line { height: 42px; border-bottom: 1.5px solid #52606d; }
 .line-row td { vertical-align: middle; }
+tr.line-row.picked td { background: var(--warn-bg); }
 
 /* ---------- tables: they scroll inside their own frame, never the whole page ---------- */
 .table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin: 0 0 14px; }
@@ -270,6 +271,17 @@ tr.sample td { color: #9aa5b1; }
 .picker-item:hover, .picker-item:focus-visible { background: #f1f2f4; }
 .picker-code { flex: 0 0 auto; font-weight: 700; font-size: 12px; color: var(--muted); }
 .picker-none { padding: 10px; color: var(--muted); font-size: 13px; }
+/* Bulk load row (stock count): the selects sit at their natural width, never stretched. */
+.load-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: -4px 0 14px; }
+.load-bar select { width: auto; min-width: 150px; }
+.load-bar .muted { margin: 0; font-size: 12.5px; }
+/* Count table: the Counted and Note boxes keep a usable width; on a narrow screen the
+   table scrolls inside its frame instead of squeezing the inputs to a few pixels. */
+table.count-table { min-width: 660px; }
+table.count-table col.w-onhand { width: 90px; }
+table.count-table col.w-qty { width: 120px; }
+table.count-table col.w-note { width: 260px; }
+table.count-table col.w-act { width: 1%; }
 [hidden] { display: none !important; }
 .filters select { width: auto; min-width: 150px; }
 dl.info { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 24px; margin: 0; }

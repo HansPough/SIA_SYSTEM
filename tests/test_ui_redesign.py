@@ -489,7 +489,7 @@ class NewWorkflowTests(Base):
         self.login("shopmgr")
         html = page(self.c.get("/inventory/stock"))
         self.assertIn('href="/inventory/count"', html)
-        self.assertIn('href="/inventory/adjustments/new"', html)
+        self.assertIn('href="/inventory/adjustments/new?from=stock"', html)   # Back returns to Stock
 
     def test_stock_count_and_adjustment_add_rows_by_search(self):
         self.login("shopmgr")

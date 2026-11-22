@@ -2,18 +2,17 @@
 {% import '_macros.html' as m %}
 {% block title %}Stock count{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Stock count</h1></div>
+<div class="page-head"><h1>Stock count</h1>
+  {% if current_role != 'owner' %}<span class="badge">{{ locations[0].code }} — {{ locations[0].name }}</span>{% endif %}
+</div>
+{% if current_role == 'owner' %}
 <form method="get" class="filters">
-  {% if current_role == 'owner' %}
-  <select name="location" onchange="this.form.submit()">
+  <select name="location" onchange="this.form.submit()" aria-label="Location to count">
     {% for l in locations %}<option value="{{ l.id }}" {{ 'selected' if l.id == loc_id }}>{{ l.code }} — {{ l.name }} ({{ l.loc_type }})</option>{% endfor %}
   </select>
-  {% else %}
-  <input type="hidden" name="location" value="{{ loc_id }}">
-  <span class="badge">{{ locations[0].code }} — {{ locations[0].name }}</span>
-  {% endif %}
 </form>
-<form method="post">
+{% endif %}
+<form method="post" class="card">
 <input type="hidden" name="location" value="{{ loc_id }}">
 <div class="item-add">
   <div class="picker">
@@ -24,14 +23,45 @@
   <button type="button" class="btn primary" data-add-item="count">Add item</button>
   <span class="muted" id="count-hint"></span>
 </div>
-<div class="table-wrap"><table class="data" data-allow-empty>
-<thead><tr><th>Item</th><th class="num">On hand</th><th class="num">Counted</th><th>Note</th><th></th></tr></thead>
+<div class="load-bar">
+  <select id="load-category" data-load-filter="category" data-load-kind="count" aria-label="Category to load">
+    <option value="">Category: all</option>
+    <option value="tire">Tires</option>
+    <option value="tube">Tubes</option>
+    <option value="flap">Flaps</option>
+    <option value="other">Other</option>
+  </select>
+  <select id="load-rack" data-load-filter="rack" data-load-kind="count" aria-label="Shelf to load" hidden>
+    <option value="">Shelf: all</option>
+  </select>
+  <button type="button" class="btn" data-load-apply="count">Add matching items</button>
+  <span class="muted" id="count-load-hint"></span>
+</div>
+{% set posted_ids = f.getlist('item_id[]') %}
+{% set posted_qtys = f.getlist('qty_actual[]') %}
+{% set posted_notes = f.getlist('item_note[]') %}
+<div class="table-wrap"><table class="data count-table" data-allow-empty>
+<colgroup><col><col class="w-onhand"><col class="w-qty"><col class="w-note"><col class="w-act"></colgroup>
+<thead><tr><th>Item</th><th class="num">On hand</th><th class="num">Counted</th><th>Count note</th><th></th></tr></thead>
 <tbody id="count-lines">
+{% if posted_ids %}
+{% for iid in posted_ids %}
+{% set item = (items|selectattr('id', 'equalto', iid|int)|list|first) %}
+<tr class="line-row">
+  <td><span data-name>{{ item.item_name if item else '' }}</span><small data-code>{{ item.item_code if item else '' }}</small><input type="hidden" name="item_id[]" value="{{ iid }}"></td>
+  <td class="num" data-onhand>{{ item.on_hand if item else '' }}</td>
+  <td><input type="number" min="0" name="qty_actual[]" value="{{ posted_qtys[loop.index0] if posted_qtys|length > loop.index0 else '' }}"></td>
+  <td><input type="text" name="item_note[]" maxlength="200" placeholder="note (optional)" value="{{ posted_notes[loop.index0] if posted_notes|length > loop.index0 else '' }}"></td>
+  <td class="row-actions"><button type="button" class="btn small ghost" data-remove-row>Remove</button></td>
+</tr>
+{% endfor %}
+{% else %}
 <tr data-empty-row><td colspan="5" class="muted">Search above and add the items you counted.</td></tr>
+{% endif %}
 </tbody>
 </table></div>
 <div class="grid">
-  {{ m.field('Remarks', 'remarks', 'textarea', col=2, help='why this count was done') }}
+  {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
 </div>
 <div class="actions">
   <button type="submit" class="btn primary">Save count</button>
@@ -49,4 +79,27 @@
   </tr>
 </template>
 <script type="application/json" id="item-data">{{ items|tojson }}</script>
+<script>
+// Shelves come from this location's item settings, so the list always matches what is stored here.
+(function () {
+  var node = document.getElementById("item-data");
+  var rack = document.getElementById("load-rack");
+  if (!node || !rack) { return; }
+  var rows;
+  try { rows = JSON.parse(node.textContent || "[]"); } catch (e) { return; }
+  var shelves = [];
+  rows.forEach(function (item) {
+    if (item.rack && shelves.indexOf(item.rack) < 0) { shelves.push(item.rack); }
+  });
+  // Alphabetical, with numbers in order so "Row 2" comes before "Row 10".
+  shelves.sort(function (a, b) { return a.localeCompare(b, undefined, {numeric: true, sensitivity: "base"}); });
+  shelves.forEach(function (name) {
+    var option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    rack.appendChild(option);
+  });
+  rack.hidden = !shelves.length;
+})();
+</script>
 {% endblock %}

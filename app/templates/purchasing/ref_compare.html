@@ -53,6 +53,10 @@
     <small class="muted">No supplier has quoted this item yet.
       <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers</a></small>
     {% endfor %}
+    {% if l.unpriced %}
+    <small class="muted">{{ l.unpriced|join(', ') }} replied without a price, so it cannot be ordered —
+      <a href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">record the quotation again</a>.</small>
+    {% endif %}
     <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" data-supplier-id=""
              data-supplier="Keep open" data-basis="" data-item="{{ l.item_name }}"
              {{ 'checked' if l.default == 'open' }}>

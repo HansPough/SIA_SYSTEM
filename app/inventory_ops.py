@@ -48,11 +48,12 @@ def get_location(location_id):
 
 
 def items_for_select(location_id):
-    """All active items with the stock at one location (for the item drop-downs)."""
+    """All active items with the stock and shelf at one location (for the item pickers)."""
     return _b().all(
-        "SELECT i.id, i.item_code, i.item_name, COALESCE(b.on_hand, 0) AS on_hand, "
-        "COALESCE(b.reserved, 0) AS reserved FROM items i "
+        "SELECT i.id, i.item_code, i.item_name, i.category, COALESCE(b.on_hand, 0) AS on_hand, "
+        "COALESCE(b.reserved, 0) AS reserved, s.rack AS rack FROM items i "
         "LEFT JOIN stock_balances b ON b.item_id = i.id AND b.location_id = :l "
+        "LEFT JOIN item_location_settings s ON s.item_id = i.id AND s.location_id = :l "
         "WHERE i.is_active ORDER BY i.item_name", l=location_id)
 
 

@@ -61,8 +61,8 @@ def _money(v, label, required=True):
         d = Decimal(s)
     except InvalidOperation:
         raise InventoryError("%s must be a number." % label)
-    if d < 0:
-        raise InventoryError("%s cannot be negative." % label)
+    if d <= 0:
+        raise InventoryError("%s must be more than zero." % label)
     return str(d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
@@ -650,7 +650,12 @@ def save_quotation(user, ref_id, supplier_id, quotation_ref, quotation_date, val
         qty = _whole(qty_raw or "0", "Quantity offered")
         if qty == 0:
             continue
-        price = _money(price_raw, "%s: unit price" % ref_items[rid]["item_name"])
+        item_name = ref_items[rid]["item_name"]
+        try:
+            price = _money(price_raw, "%s: unit price" % item_name)
+        except InventoryError:
+            raise InventoryError("%s: enter the unit price %s quoted. If they did not offer this item, "
+                                 "set its quantity to 0." % (item_name, supplier["supplier_name"]))
         lead = None
         if str(lead_raw).strip():
             lead = _whole(lead_raw, "%s: lead time" % ref_items[rid]["item_name"])
@@ -710,12 +715,17 @@ def _line_options(ref_id, lines):
     """For each REF line that still needs a supplier: who offered it, how many, at what price."""
     today = _today()
     quotes = {}
+    unpriced = {}
     for row in _b().all(
             "SELECT qi.replenishment_item_id AS rid, qi.qty_offered, qi.unit_price, qi.lead_time_days, "
             "q.id AS quotation_id, q.valid_until, s.id AS supplier_id, s.supplier_name "
             "FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id "
             "JOIN rfqs rq ON rq.id = q.rfq_id JOIN suppliers s ON s.id = q.supplier_id "
             "WHERE rq.ref_id = :r AND s.is_active AND qi.qty_offered > 0 ORDER BY s.supplier_name", r=ref_id):
+        if _dec(row["unit_price"]) <= 0:
+            # A reply stored before prices were required to be above zero: it is not an offer.
+            unpriced.setdefault(row["rid"], []).append(row["supplier_name"])
+            continue
         valid = _date(row["valid_until"], "Valid until") if row.get("valid_until") else None
         quotes.setdefault(row["rid"], []).append({
             "key": "q:%d" % row["quotation_id"], "kind": "quotation", "supplier_id": row["supplier_id"],
@@ -728,7 +738,7 @@ def _line_options(ref_id, lines):
         options = list(quotes.get(ln["ref_item_id"], []))
         for sup in regulars:
             price = _valid_agreed_price(sup["id"], ln["item_id"])
-            if price is not None:
+            if price is not None and _dec(price["agreed_price"]) > 0:
                 options.append({"key": "a:%d" % sup["id"], "kind": "agreed_price", "supplier_id": sup["id"],
                                 "supplier_name": sup["supplier_name"] + " (agreed price)",
                                 "max_qty": ln["open"], "unit_price": _price_text(price["agreed_price"]),
@@ -742,6 +752,7 @@ def _line_options(ref_id, lines):
         else:
             pick = None
         ln["options"] = options
+        ln["unpriced"] = unpriced.get(ln["ref_item_id"], [])
         ln["default"] = pick["key"] if pick else "open"
     return lines
 

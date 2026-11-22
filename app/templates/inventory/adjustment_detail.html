@@ -16,8 +16,9 @@
   <div><dt>Review remarks</dt><dd>{{ adj.review_remarks or '–' }}</dd></div>
 </dl>
 <h2>Items</h2>
+{% set note_label = 'Count note' if adj.reason == 'count_difference' else 'Item remarks' %}
 <div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th class="num">System qty</th><th class="num">Actual qty</th><th class="num">Difference</th><th>Remarks</th></tr></thead>
+<thead><tr><th>Item</th><th class="num">System qty</th><th class="num">Actual qty</th><th class="num">Difference</th><th>{{ note_label }}</th></tr></thead>
 <tbody>{% for l in adj.lines %}<tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty_system }}</td><td class="num">{{ l.qty_actual }}</td><td class="num">{{ '%+d' % l.qty_diff }}</td><td>{{ l.item_remarks or '' }}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% if current_role == 'owner' and adj.status == 'pending' and not can_review %}<p class="muted">The manager of this location approves this adjustment. The result shows here.</p>{% endif %}

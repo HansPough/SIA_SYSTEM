@@ -154,15 +154,27 @@ document.addEventListener("click", function (e) {
     }
     box.hidden = false;
   }
-  function addRow(kind, item, hint) {
+  function addRow(kind, item, hint, opts) {
+    opts = opts || {};
     var tbody = document.getElementById(kind + "-lines");
     var template = document.getElementById(kind + "-row-template");
-    if (!tbody || !template) { return; }
-    var already = false;
+    if (!tbody || !template) { return false; }
+    var existing = null;
     tbody.querySelectorAll('input[name="item_id[]"]').forEach(function (input) {
-      if (input.value === String(item.id)) { already = true; }
+      if (input.value === String(item.id)) { existing = input.closest("tr"); }
     });
-    if (already) { hint.textContent = "Already added."; return; }
+    if (existing) {
+      // Already on the sheet: point the user at the existing line instead of adding a second one.
+      if (!opts.quiet) {
+        existing.classList.add("picked");
+        if (existing.scrollIntoView) { existing.scrollIntoView({block: "nearest"}); }
+        var box = existing.querySelector('input[name="qty_actual[]"]');
+        if (box) { box.focus(); box.select(); }
+        setTimeout(function () { existing.classList.remove("picked"); }, 1400);
+        if (hint) { hint.textContent = "Already on the sheet \u2014 count it there."; }
+      }
+      return false;
+    }
     var row = template.content.firstElementChild.cloneNode(true);
     row.querySelector("[data-name]").textContent = item.item_name;
     row.querySelector("[data-code]").textContent = item.item_code;
@@ -178,18 +190,20 @@ document.addEventListener("click", function (e) {
     var empty = tbody.querySelector("[data-empty-row]");
     if (empty) { empty.hidden = true; }
     tbody.appendChild(row);
-    hint.textContent = "";
+    if (hint && !opts.quiet) { hint.textContent = ""; }
     if (kind === "adjust" && typeof updateDiff === "function") { updateDiff(row); }
-    if (actual) { actual.focus(); actual.select(); }
+    if (actual && !opts.quiet) { actual.focus(); actual.select(); }
+    return true;
   }
   function addItem(kind, item) {
     var input = document.getElementById(kind + "-search");
     var hint = document.getElementById(kind + "-hint");
     if (!item || !input || !hint) { return; }
-    addRow(kind, item, hint);
+    var added = addRow(kind, item, hint);
     input.value = "";
     hideResults(kind);
-    input.focus();
+    // A duplicate keeps the existing row focused; a new row returns to the search box.
+    if (added) { input.focus(); }
   }
   document.addEventListener("input", function (e) {
     var input = e.target.closest("[data-item-search]");
@@ -227,6 +241,57 @@ document.addEventListener("click", function (e) {
     e.preventDefault();
     var found = matches[kind] && matches[kind].length ? matches[kind][0] : findItem(input.value, items());
     if (found) { addItem(kind, found); }
+  });
+  // Monthly audit: add every item that matches the chosen filters (category and/or shelf),
+  // including items whose system stock is 0.
+  document.addEventListener("click", function (e) {
+    var button = e.target.closest("[data-load-apply]");
+    if (!button) { return; }
+    var kind = button.getAttribute("data-load-apply");
+    var hint = document.getElementById(kind + "-load-hint");
+    var filters = {};
+    document.querySelectorAll('[data-load-filter][data-load-kind="' + kind + '"]').forEach(function (select) {
+      if (select.value) { filters[select.getAttribute("data-load-filter")] = select.value.toLowerCase(); }
+    });
+    var rows = items().filter(function (item) {
+      return Object.keys(filters).every(function (key) {
+        return String(item[key] == null ? "" : item[key]).toLowerCase() === filters[key];
+      });
+    });
+    var added = 0, skipped = 0;
+    rows.forEach(function (item) {
+      if (addRow(kind, item, hint, {quiet: true})) { added += 1; } else { skipped += 1; }
+    });
+    if (added) {
+      // Quiet add: one focus at the top of the sheet, not a scroll to the last row.
+      var first = document.querySelector("#" + kind + "-lines input[name=\"qty_actual[]\"]");
+      if (first) { first.focus(); first.select(); }
+    }
+    if (hint) {
+      if (!rows.length) {
+        hint.textContent = "No item matches those filters.";
+      } else if (!added) {
+        hint.textContent = skipped === 1 ? "Nothing to add \u2014 that item is already on the sheet."
+          : "Nothing to add \u2014 all " + skipped + " matching items are already on the sheet.";
+      } else {
+        hint.textContent = "Added " + added + " item" + (added === 1 ? "" : "s") +
+          (skipped ? "; " + skipped + " already on the sheet." : ".");
+      }
+    }
+  });
+  // Enter in a counted quantity starts the next item at the search box instead of
+  // submitting the whole sheet.
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || !e.target.closest) { return; }
+    var qty = e.target.closest('input[name="qty_actual[]"]');
+    if (!qty) { return; }
+    var tbody = qty.closest("tbody");
+    var match = tbody && tbody.id ? tbody.id.match(/^([a-z]+)-lines$/) : null;
+    var search = match ? document.getElementById(match[1] + "-search") : null;
+    if (!search) { return; }
+    e.preventDefault();
+    search.focus();
+    search.select();
   });
 })();
 
