@@ -17,11 +17,6 @@
 {% endmacro %}
 
 <div class="page-head"><h1>New requisition</h1>{{ m.status('draft') }}</div>
-{% if alert %}
-<p class="note">Filled from alert {{ alert.alert_no }}. Change the quantities or add items.</p>
-{% else %}
-<p class="note">Ask the warehouse for stock. No prices.</p>
-{% endif %}
 <form method="post" class="card">
 <input type="hidden" name="alert_id" value="{{ alert.id if alert else '' }}">
 <div class="grid">

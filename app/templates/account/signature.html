@@ -2,8 +2,6 @@
 {% block title %}My signature{% endblock %}
 {% block content %}
 <div class="page-head"><h1>My signature</h1><span class="badge">{{ user.full_name }}</span></div>
-<p class="note">Draw it once. It is added whenever you sign.</p>
-
 {% if user.signature_data %}
 <div class="card">
   <h2 style="margin-top:0">Signature on file</h2>

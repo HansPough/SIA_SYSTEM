@@ -63,6 +63,18 @@ def _today():
     return dt.date.today()
 
 
+def variance_label(diffs):
+    """Variance as shown on the AR: No, or Yes with the total units short.
+
+    A line counts as a variance when what the shop received differs from what
+    the RF asked for (a short dispatch counts, not only a rejection).
+    """
+    if not any(diffs):
+        return "No"
+    total = sum(diffs)
+    return "Yes (%+d pcs)" % total if total else "Yes"
+
+
 # ---------------------------------------------------------------------
 # Drivers and vehicles
 # ---------------------------------------------------------------------
@@ -224,11 +236,21 @@ def get_transfer(ts_id, user):
         "(SELECT ai.qty_expected FROM acknowledgment_receipt_items ai "
         " WHERE ai.ts_item_id = ti.id LIMIT 1) AS qty_expected, "
         "(SELECT ai.variance_resolved_at FROM acknowledgment_receipt_items ai "
-        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_resolved_at "
+        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_resolved_at, "
+        "(SELECT ai.variance_reason FROM acknowledgment_receipt_items ai "
+        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_reason "
         "FROM transfer_slip_items ti JOIN items i ON i.id = ti.item_id "
         "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
         "WHERE ti.ts_id = :t ORDER BY i.item_name", t=ts_id)
-    head["ar"] = _b().one("SELECT * FROM acknowledgment_receipts WHERE ts_id = :t", t=ts_id)
+    ar = _b().one("SELECT * FROM acknowledgment_receipts WHERE ts_id = :t", t=ts_id)
+    if ar is not None:
+        ar = dict(ar)
+        diffs = [l["qty_received"] - l["qty_requested"] for l in head["lines"]
+                 if l["qty_received"] is not None]
+        ar["variance_total"] = sum(diffs)
+        ar["has_variance"] = any(diffs)
+        ar["variance_label"] = variance_label(diffs)
+    head["ar"] = ar
     return head
 
 
@@ -540,7 +562,9 @@ def receive_delivery(user, ts_id, received_date, remarks, pairs, counted=None):
     missing = [i for i in by_ts if i not in got]
     if missing:
         raise InventoryError("Enter the accepted/rejected quantity for every line.")
-    has_variance = any(g["rejected"] > 0 for g in got.values())
+    # A short dispatch is a variance too: the shop received less than the RF asked for.
+    has_variance = any(g["accepted"] != by_ts[tid]["qty_requested"] or g["rejected"] > 0
+                       for tid, g in got.items())
 
     ar_no = inv.next_doc_no("AR")
     row = _b().one(

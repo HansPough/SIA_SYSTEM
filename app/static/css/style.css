@@ -397,6 +397,8 @@ dl.info dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: break-word; }
 dl.info.doc-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 24px;
   margin: 14px 0 6px; }
 .doc-items { margin-top: 4px; }
+.doc-items td.diff-short, .doc-items td.diff-short strong { color: var(--danger); font-weight: 700; }
+.doc-items td.diff-zero, .doc-items td.diff-zero strong { color: var(--muted); }
 .doc-notes p { margin: 4px 0; }
 .sign-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 22px; margin-top: 10px; }
 .sign-box { border-top: 1.5px solid var(--ink); padding-top: 7px; min-height: 84px; }

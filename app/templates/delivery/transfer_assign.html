@@ -3,7 +3,6 @@
 {% block title %}Assign transfer {{ ts.ts_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Assign transfer</h1>{{ m.status('draft') }}</div>
-<p class="note">They appear on the TS.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}

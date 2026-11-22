@@ -3,7 +3,6 @@
 {% block title %}Record sale{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Record sale</h1>{{ m.status('new') }}</div>
-<p class="note">Stock out. No prices. Reserved stock cannot be sold.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Issue no.', 'issue_no', 'text', value=next_no, readonly=True) }}

@@ -3,7 +3,6 @@
 {% block title %}ROP settings{% endblock %}
 {% block content %}
 <div class="page-head"><h1>ROP settings</h1></div>
-<p class="note">Max is at least the ROP. Suggested ROP = 30-day average &times; lead time &times; 1.5.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Item', 'item', 'text', value=data.item.item_name, readonly=True) }}

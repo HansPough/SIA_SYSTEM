@@ -9,7 +9,6 @@
 {% set qdate = f.get('quotation_date') or ((data.existing.quotation_date|string)[:10] if data.existing else data.today) %}
 {% set vdate = f.get('valid_until') or ((data.existing.valid_until|string)[:10] if data.existing and data.existing.valid_until else '') %}
 <div class="page-head"><h1>Record quotation</h1><span class="badge">{{ data.ref.ref_no }}</span></div>
-<p class="note">Enter the supplier's reply. Saving again replaces it.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RFQ no.', 'rfq_no', 'text', value=data.rfq.rfq_no, readonly=True) }}

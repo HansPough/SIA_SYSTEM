@@ -3,9 +3,6 @@
 {% block title %}Choose Suppliers {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Choose suppliers</h1><span class="badge">{{ data.ref.ref_no }}</span></div>
-<p class="note">Pick a supplier per item, or apply one offer to every item it covers.
-  <strong>Keep it open</strong> to ask more later. The owner approves each supplier separately,
-  and each approved supplier gets its own purchase order.</p>
 
 {% if data.pending %}
 <div class="flash">This REF is already waiting for the owner's decision.</div>
@@ -74,7 +71,6 @@
 
 <div class="card" id="split-preview">
 <h2 style="margin-top:0">What sending this does</h2>
-<p class="note">One approval per supplier. The owner decides each supplier separately; each approved supplier gets its own PO.</p>
 <ul id="split-list">
 {% for g in data.groups %}
 <li><strong>{{ g.supplier_name }}</strong> &mdash; {{ g.lines|length }} item{{ 's' if g.lines|length != 1 }}:

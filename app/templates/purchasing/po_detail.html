@@ -1,9 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Purchase Order {{ po.po_no }}{% endblock %}
 {% block content %}
-{% if po.status == 'draft' %}
-<p class="note">Owner approved. {% if current_role == 'warehouse_manager' %}Send it, then press <strong>Sign &amp; mark as sent</strong>.{% else %}The warehouse manager sends it.{% endif %}</p>
-{% endif %}
 <div class="doc-split">
 <div class="doc-main">
 {% set d = load_document('PO', po.id) %}

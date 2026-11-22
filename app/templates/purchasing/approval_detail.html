@@ -5,7 +5,6 @@
 <div class="page-head"><h1>Approve supplier</h1>
   {{ m.status('pending', label='Waiting for you') if appr.batch_pending else m.status('approved', label='Decided') }}
 </div>
-<p class="note">Each supplier is decided separately; each approved supplier gets its own PO for the warehouse manager to send.</p>
 <div class="card">
 <dl class="info">
   <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=appr.ref_id) }}">{{ appr.ref_no }}</a></dd></div>

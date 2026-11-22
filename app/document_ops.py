@@ -5,11 +5,14 @@ the printable page and the PDF share the same data. Signatures live in
 `document_signatures` and are created by app/signing.py (name and role always
 come from the account; a signed line is final).
 """
+import datetime as dt
+
 from . import delivery_ops as dop
 from . import inventory_service as inv
 from . import purchasing_ops as pur
 from . import requisition_ops as req
 from . import signing
+from . import statuses
 from .inventory_service import InventoryError
 
 DOC_TYPES = signing.DOC_TYPES
@@ -41,19 +44,12 @@ def _date(value):
     return _text(value, 10)
 
 
-def _note(*parts):
-    """A line note joined from the parts that apply. Notes are outside the signature hash."""
-    return " · ".join(str(p) for p in parts if p)
-
-
 def _status_label(doc_type, status):
-    """What the status badge says. An approved PO is 'Ready to send', not 'Draft'."""
+    """What the status badge says, worded the same on the page and in the PDF."""
     raw = _text(status)
     if doc_type == "PO" and raw == "draft":
         return "Ready to send"
-    if raw == "partly_ordered":
-        return "Partly ordered"
-    return raw.replace("_", " ").title()
+    return statuses.label(raw)
 
 
 def _slot_data(doc_type, doc_id, user, doc_hash):
@@ -149,7 +145,8 @@ def lifecycle(doc_type, doc_id):
 
 def _document(doc_type, title, doc_no, status, date, party_from, party_to,
               meta, items, user, doc_id, show_prices=False, total=None, notes=None,
-              show_amounts=True, prepared=None):
+              show_amounts=True, prepared=None, qty_columns=None, qty_totals=None,
+              system_note=None):
     doc_hash = signing.content_hash(doc_type, doc_no, party_from, party_to, items, total)
     return {
         "doc_type": doc_type,
@@ -164,6 +161,9 @@ def _document(doc_type, title, doc_no, status, date, party_from, party_to,
         "show_prices": show_prices,
         "show_amounts": show_amounts and show_prices,
         "total": total,
+        "qty_columns": qty_columns,
+        "qty_totals": qty_totals,
+        "system_note": system_note,
         "notes": [n for n in (notes or []) if n],
         # people who prepared the record: shown as plain text, they do not sign
         "prepared": [(label, name) for label, name in (prepared or []) if name],
@@ -171,6 +171,15 @@ def _document(doc_type, title, doc_no, status, date, party_from, party_to,
         "doc_hash": doc_hash,
         "doc_id": doc_id,
     }
+
+
+def _qty_totals(lines, keys):
+    """Column sums; a total stays unknown (None) while any line is still unknown."""
+    totals = {}
+    for key in keys:
+        values = [line.get(key) for line in lines]
+        totals[key] = None if any(v is None for v in values) else sum(values)
+    return totals
 
 
 def _location(location_id):
@@ -239,12 +248,22 @@ def _load_ts(doc_id, user):
     ts = dop.get_transfer(doc_id, user)
     if ts is None:
         return None
-    items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
-              "note": _note("requested %s" % l["qty_requested"],
-                            ("received %s" % l["qty_received"]) if l.get("qty_received") is not None else None)}
-             for l in ts["lines"]]
+    items = []
+    for l in ts["lines"]:
+        received = l.get("qty_received")
+        requested = l["qty_requested"]
+        items.append({
+            "code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
+            "requested": requested, "dispatched": l["qty_released"], "received": received,
+            "diff": None if received is None else received - requested,
+            "note": l.get("variance_reason") or "",
+        })
+    ar = ts.get("ar")
+    status = ts["status"]
+    if ar and ar["has_variance"] and status == "delivered":
+        status = "delivered_with_variance"
     return _document(
-        "TS", TITLES["TS"], ts["ts_no"], ts["status"],
+        "TS", TITLES["TS"], ts["ts_no"], status,
         ts.get("released_at") or ts.get("created_at"),
         ("From", "%s — %s" % (ts["from_code"], ts["from_name"])),
         ("To", "%s — %s" % (ts["shop_code"], ts["shop_name"])),
@@ -253,6 +272,9 @@ def _load_ts(doc_id, user):
          ("Vehicle", ts["vehicle_plate"] or "–"),
          ("Driver contact", ts.get("driver_contact") or "–")],
         items, user, doc_id,
+        qty_columns=[("requested", "Requested"), ("dispatched", "Dispatched"),
+                     ("received", "Received")],
+        qty_totals=_qty_totals(items, ["requested", "dispatched", "received", "diff"]),
         notes=[ts.get("remarks"),
                ("The driver could not sign on screen. Released with this reason: %s" % ts["driver_paper_reason"])
                if ts.get("driver_paper_reason") else None],
@@ -270,25 +292,59 @@ def _load_ar(doc_id, user):
     ts = dop.get_transfer(ar["ts_id"], user)
     if ts is None:
         return None
-    lines = _b().all(
+    rows = _b().all(
         "SELECT ari.*, i.item_code, i.item_name, "
         "COALESCE(x.qty_requested, ari.qty_expected) AS qty_requested "
         "FROM acknowledgment_receipt_items ari JOIN items i ON i.id = ari.item_id "
         "LEFT JOIN transfer_slip_items ti ON ti.id = ari.ts_item_id "
         "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
         "WHERE ari.ar_id = :i ORDER BY i.item_name", i=doc_id)
-    items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_received"],
-              "note": _note("requested %s" % l["qty_requested"],
-                            ("%s rejected/short" % (l["qty_expected"] - l["qty_received"]))
-                            if l["qty_received"] < l["qty_expected"] else None)}
-             for l in lines]
+    items = []
+    for l in rows:
+        requested = l["qty_requested"]
+        items.append({
+            "code": l["item_code"], "name": l["item_name"], "qty": l["qty_received"],
+            "requested": requested, "received": l["qty_received"],
+            "diff": l["qty_received"] - requested,
+            "note": l.get("variance_reason") or "",
+        })
+    diffs = [it["diff"] for it in items]
     return _document(
-        "AR", TITLES["AR"], ar["ar_no"], "delivered_with_variance" if ar["has_variance"] else "delivered",
+        "AR", TITLES["AR"], ar["ar_no"],
+        "delivered_with_variance" if any(diffs) else "delivered",
         ar["received_at"], ("From", "%s — %s" % (ts["from_code"], ts["from_name"])),
         ("To", "%s — %s" % (ts["shop_code"], ts["shop_name"])),
         [("TS no.", ar["ts_no"]),
-         ("Variance", "Yes" if ar["has_variance"] else "No")],
-        items, user, doc_id, notes=[ar.get("remarks")])
+         ("Received by", ar["received_by_name"]),
+         ("Variance", dop.variance_label(diffs))],
+        items, user, doc_id,
+        qty_columns=[("requested", "Requested"), ("received", "Received")],
+        qty_totals=_qty_totals(items, ["requested", "received", "diff"]),
+        notes=[ar.get("remarks")],
+        system_note="Generated automatically when the shop confirms delivery.")
+
+
+def draft_ar(ts_id, user):
+    """The AR as it will read once the shop confirms: no signature, nothing counted yet.
+
+    Shown on the receiving screen so the shop sees the document it is about to
+    acknowledge. doc_id is 0: there is no saved AR row until confirmation.
+    """
+    ts = dop.get_transfer(ts_id, user)
+    if ts is None or ts["status"] != "in_transit":
+        return None
+    items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
+              "requested": l["qty_requested"], "received": None, "diff": None, "note": ""}
+             for l in ts["lines"]]
+    return _document(
+        "AR", TITLES["AR"], inv.peek_doc_no("AR"), "pending", dt.date.today().isoformat(),
+        ("From", "%s — %s" % (ts["from_code"], ts["from_name"])),
+        ("To", "%s — %s" % (ts["shop_code"], ts["shop_name"])),
+        [("TS no.", ts["ts_no"]), ("Variance", "–")],
+        items, user, 0,
+        qty_columns=[("requested", "Requested"), ("received", "Received")],
+        qty_totals=_qty_totals(items, ["requested", "received", "diff"]),
+        system_note="Generated automatically when the shop confirms delivery.")
 
 
 def _load_rm(doc_id, user):

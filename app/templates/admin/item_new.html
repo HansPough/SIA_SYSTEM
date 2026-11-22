@@ -3,7 +3,6 @@
 {% block title %}New item{% endblock %}
 {% block content %}
 <div class="page-head"><h1>New item</h1></div>
-<p class="note">Leave the code empty to generate one.</p>
 <form method="post" class="card">
 {% include 'admin/_item_form.html' %}
 <div class="grid">{{ m.field('Item code', 'item_code', 'text', value=f.get('item_code') or '', help='Leave empty to generate one, for example TIR-0417') }}</div>
