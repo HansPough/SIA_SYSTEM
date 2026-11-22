@@ -505,6 +505,8 @@ CREATE TABLE transfer_slip_items (
     rf_item_id    INTEGER NOT NULL REFERENCES requisition_items(id),
     item_id       INTEGER NOT NULL REFERENCES items(id),
     qty_released  INTEGER NOT NULL CHECK (qty_released > 0),
+    qty_needed    INTEGER,                       -- what the RF line still needed when this TS was prepared (migration 017)
+    dispatch_note VARCHAR(200),                  -- why fewer units than the RF asked for (migration 016)
     loaded        BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE (ts_id, rf_item_id)
 );

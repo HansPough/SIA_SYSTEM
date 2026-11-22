@@ -182,6 +182,11 @@ def _qty_totals(lines, keys):
     return totals
 
 
+def _line_note(*parts):
+    """One Remarks cell: why the warehouse sent it short, then why the shop rejected it."""
+    return " · ".join(p.strip() for p in parts if p and p.strip())
+
+
 def _location(location_id):
     row = _b().one("SELECT code, name FROM locations WHERE id = :i", i=location_id)
     return ("%s — %s" % (row["code"], row["name"])) if row else "–"
@@ -256,7 +261,7 @@ def _load_ts(doc_id, user):
             "code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
             "requested": requested, "dispatched": l["qty_released"], "received": received,
             "diff": None if received is None else received - requested,
-            "note": l.get("variance_reason") or "",
+            "note": _line_note(l.get("dispatch_note"), l.get("variance_reason")),
         })
     ar = ts.get("ar")
     status = ts["status"]
@@ -293,8 +298,8 @@ def _load_ar(doc_id, user):
     if ts is None:
         return None
     rows = _b().all(
-        "SELECT ari.*, i.item_code, i.item_name, "
-        "COALESCE(x.qty_requested, ari.qty_expected) AS qty_requested "
+        "SELECT ari.*, i.item_code, i.item_name, ti.dispatch_note, "
+        "COALESCE(ti.qty_needed, x.qty_requested, ari.qty_expected) AS qty_requested "
         "FROM acknowledgment_receipt_items ari JOIN items i ON i.id = ari.item_id "
         "LEFT JOIN transfer_slip_items ti ON ti.id = ari.ts_item_id "
         "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
@@ -306,7 +311,7 @@ def _load_ar(doc_id, user):
             "code": l["item_code"], "name": l["item_name"], "qty": l["qty_received"],
             "requested": requested, "received": l["qty_received"],
             "diff": l["qty_received"] - requested,
-            "note": l.get("variance_reason") or "",
+            "note": _line_note(l.get("dispatch_note"), l.get("variance_reason")),
         })
     diffs = [it["diff"] for it in items]
     return _document(
@@ -334,7 +339,8 @@ def draft_ar(ts_id, user):
     if ts is None or ts["status"] != "in_transit":
         return None
     items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_released"],
-              "requested": l["qty_requested"], "received": None, "diff": None, "note": ""}
+              "requested": l["qty_requested"], "received": None, "diff": None,
+              "note": _line_note(l.get("dispatch_note"))}
              for l in ts["lines"]]
     return _document(
         "AR", TITLES["AR"], inv.peek_doc_no("AR"), "pending", dt.date.today().isoformat(),

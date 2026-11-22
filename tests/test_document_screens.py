@@ -103,13 +103,30 @@ class DocumentTests(Base):
     def test_short_dispatch_is_a_variance_even_when_every_dispatched_unit_arrives(self):
         self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
         self.be.commit()
-        self.chain()
+        self.chain("only 5 in stock")
         self.receive()                              # every dispatched unit arrived, but 3 were never sent
         ar = self.be.one("SELECT * FROM acknowledgment_receipts")
         self.assertTrue(ar["has_variance"])
         page = self.c.get("/documents/AR/1").get_data(as_text=True)
         self.assertIn("Yes (-3 pcs)", page)
         self.assertIn('class="num diff-short">-3</td>', page)
+
+    def test_short_dispatch_reason_prints_on_the_ts_and_the_ar(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.chain("only 5 in stock")
+        self.assertIn("only 5 in stock", self.c.get("/documents/TS/1").get_data(as_text=True))
+        self.receive()                              # every dispatched unit accepted
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("only 5 in stock", page)      # the shop sees why 3 never came
+
+    def test_a_short_line_shows_both_reasons_in_one_remark(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.chain("only 5 in stock")
+        self.receive(qty_a=4, reason="one damaged")  # short dispatch and a further rejection
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("only 5 in stock · one damaged", page)
 
     def test_receipt_prints_the_header_remarks_under_remarks(self):
         self.chain()
