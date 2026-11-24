@@ -95,7 +95,7 @@ balance.
 
 ## Tests and verification
 
-`python -m unittest discover tests -v` → **382 tests, all passing** (Inventory, Requisition,
+`python -m unittest discover tests -v` → **384 tests, all passing** (Inventory, Requisition,
 Purchasing and Delivery screens plus the stock core).
 
 A full flow was also run by hand on PostgreSQL: shop RF → reserve → prepare TS → assign → load

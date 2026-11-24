@@ -842,6 +842,30 @@ def _default_split(lines):
     return out
 
 
+def _bulk_suppliers(lines):
+    """Per supplier: how many open items they can cover and the total at their max quantities."""
+    groups = {}
+    for ln in lines:
+        best = {}
+        for o in ln["options"]:
+            if o["expired"]:
+                continue
+            cur = best.get(o["supplier_id"])
+            if cur is None or _dec(o["unit_price"]) < _dec(cur["unit_price"]):
+                best[o["supplier_id"]] = o
+        for sid, o in best.items():
+            g = groups.setdefault(sid, {"supplier_id": sid,
+                                        "supplier_name": o["supplier_name"].replace(" (agreed price)", ""),
+                                        "covered": 0, "total": Decimal("0")})
+            g["covered"] += 1
+            g["total"] += _amount(min(o["max_qty"], ln["open"]), o["unit_price"])
+    out = list(groups.values())
+    for g in out:
+        g["total"] = str(g["total"].quantize(Decimal("0.01")))
+    out.sort(key=lambda g: g["supplier_name"].lower())
+    return out
+
+
 def compare_data(ref_id, user):
     """Everything the 'choose suppliers' screen needs: each line still to order, with every offer."""
     ref = _ref_for_write(user, ref_id)
@@ -849,6 +873,7 @@ def compare_data(ref_id, user):
     open_ = _line_options(ref_id, [dict(c) for c in coverage_lines if c["open"] > 0])
     done = [c for c in coverage_lines if c["open"] == 0]
     return {"ref": ref, "lines": open_, "done": done, "groups": _default_split(open_),
+            "bulk": _bulk_suppliers(open_), "bulk_items": len(open_),
             "pending": _b().one("SELECT COUNT(*) AS n FROM purchase_approvals WHERE ref_id = :r "
                                 "AND decision = 'pending'", r=ref_id)["n"] > 0}
 

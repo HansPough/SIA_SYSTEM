@@ -12,6 +12,17 @@
 <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
 {% else %}
 <form method="post" class="card" data-split>
+{% if data.bulk %}
+<div class="quick-select" data-bulk-bar>
+  <span class="muted">Quick select</span>
+  <button type="button" class="btn small ghost" data-bulk-cheapest>Cheapest per item</button>
+  {% for g in data.bulk %}
+  <button type="button" class="btn small ghost" data-bulk-supplier="{{ g.supplier_id }}">
+    {{ g.supplier_name }} <span class="muted">({{ g.covered }}/{{ data.bulk_items }} &middot; {{ g.total|money }})</span>
+  </button>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="table-wrap"><table class="data">
 <thead><tr><th>Item</th><th>Order from</th><th class="num">Qty to order</th><th class="num">Subtotal</th></tr></thead>
 <tbody>
@@ -111,6 +122,18 @@
     li.textContent = text;
     return li;
   }
+  function applyOption(row, radio) {
+    var qty = row.querySelector("input[type=number]");
+    radio.checked = true;
+    if (!qty) { return; }
+    if (radio.value === "open") {
+      qty.disabled = true;
+    } else {
+      qty.disabled = false;
+      qty.value = radio.getAttribute("data-qty");
+      qty.max = radio.getAttribute("data-qty");
+    }
+  }
   function refresh() {
     var groups = {}, order = [], open = 0;
     form.querySelectorAll("tr[data-item-row]").forEach(function (row) {
@@ -170,20 +193,45 @@
     var target = event.target;
     if (target.matches("input[type=radio]")) {
       var row = target.closest("tr[data-item-row]");
-      var qty = row && row.querySelector("input[type=number]");
-      if (qty) {
-        if (target.value === "open") {
-          qty.disabled = true;
-        } else {
-          qty.disabled = false;
-          qty.value = target.getAttribute("data-qty");
-          qty.max = target.getAttribute("data-qty");
-        }
-      }
+      if (row) { applyOption(row, target); }
     }
     refresh();
   });
   form.addEventListener("input", refresh);
+  var bar = form.querySelector("[data-bulk-bar]");
+  if (bar) {
+    bar.addEventListener("click", function (event) {
+      var btn = event.target.closest("button");
+      if (!btn) { return; }
+      var rows = form.querySelectorAll("tr[data-item-row]");
+      if (btn.hasAttribute("data-bulk-cheapest")) {
+        rows.forEach(function (row) {
+          var offers = Array.prototype.filter.call(
+            row.querySelectorAll("input[type=radio]"),
+            function (r) { return !r.disabled && r.value !== "open"; });
+          if (!offers.length) {
+            var open = row.querySelector('input[type=radio][value="open"]');
+            if (open) { applyOption(row, open); }
+            return;
+          }
+          var pick = offers[0];
+          offers.forEach(function (r) {
+            if (parseFloat(r.getAttribute("data-price")) < parseFloat(pick.getAttribute("data-price"))) {
+              pick = r;
+            }
+          });
+          applyOption(row, pick);
+        });
+      } else if (btn.hasAttribute("data-bulk-supplier")) {
+        var sid = btn.getAttribute("data-bulk-supplier");
+        rows.forEach(function (row) {
+          var radio = row.querySelector('input[type=radio][data-supplier-id="' + sid + '"]');
+          if (radio && !radio.disabled) { applyOption(row, radio); }
+        });
+      }
+      refresh();
+    });
+  }
   refresh();
 })();
 </script>

@@ -864,6 +864,31 @@ class SplitOrderingTests(Base):
                                      p=pos[0]["id"])["n"], 2)
         self.assertAlmostEqual(float(pos[0]["total_amount"]), 20 * 10.0 + 10 * 18.0, places=2)
 
+    def test_quick_select_lists_cheapest_and_each_suppliers_coverage_and_total(self):
+        ref_id = self.two_item_ref()                                  # A x20, B x10
+        self.mixed_quotes(ref_id)                                     # Sup A has B, Sup B has A
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertLess(page.index("data-bulk-bar"), page.index('<table class="data"'))
+        self.assertIn("data-bulk-cheapest", page)
+        # Sup A covers everything once the agreed price for A is added to their quotation for B
+        self.assertRegex(page, r'data-bulk-supplier="%d">\s*Sup A <span class="muted">'
+                               r'\(2/2 &middot; 400\.00\)' % SUP_A)
+        self.assertRegex(page, r'data-bulk-supplier="%d">\s*Sup B <span class="muted">'
+                               r'\(1/2 &middot; 200\.00\)' % SUP_B)
+
+    def test_quick_select_leaves_out_an_expired_offer(self):
+        ref_id = self.two_item_ref()
+        self.mixed_quotes(ref_id)
+        self.be.execute("UPDATE quotations SET valid_until = '2020-01-01' WHERE supplier_id = :s", s=SUP_B)
+        self.be.commit()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        # Sup B has no agreed price behind the expired quotation, so they cannot be quick-selected
+        self.assertNotIn('data-bulk-supplier="%d"' % SUP_B, page)
+        self.assertRegex(page, r'data-bulk-supplier="%d">\s*Sup A <span class="muted">'
+                               r'\(2/2 &middot; 400\.00\)' % SUP_A)
+
     def test_a_stored_zero_price_is_not_an_offer(self):
         """Old data with a 0 price must not become the 'cheapest' preselected supplier."""
         ref_id = self.two_item_ref()

@@ -199,6 +199,9 @@ a.tile:hover { border-color: var(--brand); transform: translateY(-2px); box-shad
 .content { scroll-padding-bottom: 96px; }
 .actions form { margin: 0; display: inline-flex; }
 .actions .spacer { flex: 1; }
+.quick-select { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.quick-select .muted { font-size: 12.5px; }
+.quick-select .btn { border-radius: 999px; }
 
 /* ---------- forms ---------- */
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 22px; }

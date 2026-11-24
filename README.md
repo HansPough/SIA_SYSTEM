@@ -157,4 +157,4 @@ Items are classified only by their specs. There is no vehicle type.
 
 ## Tests
 
-`python -m unittest discover tests -v` (382 tests, run on SQLite, no PostgreSQL needed).
+`python -m unittest discover tests -v` (384 tests, run on SQLite, no PostgreSQL needed).
