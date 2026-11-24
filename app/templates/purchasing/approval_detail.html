@@ -62,8 +62,9 @@
 {% if appr.batch_pending %}
 <div class="card">
 <div class="grid">
-  {{ m.field('Expected delivery', 'expected_date', 'date', value=f.get('expected_date', ''),
-             help='used on every PO you approve') }}
+  {{ m.field('Expected delivery', 'expected_date', 'date',
+             value=f.get('expected_date', appr.suggested_expected or ''),
+             help='from quotation date + lead time' if appr.suggested_expected else 'used on every PO you approve') }}
   {{ m.field('PO terms', 'terms', 'text', value=f.get('terms', ''), col=2,
              help='optional, printed on the PO') }}
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2,

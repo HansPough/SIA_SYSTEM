@@ -31,7 +31,16 @@
 </form>
 <p class="muted">The sale still counts until your manager confirms. Then the stock goes back.</p>
 {% endif %}
-{% if issue.status == 'void_requested' and not can_confirm %}<p class="muted">A void was requested and is waiting for the shop manager or the owner to confirm.</p>{% endif %}
+{% if issue.status == 'void_requested' and not can_confirm %}
+<div class="inline-row"><span class="muted">A void was requested and is waiting for the shop manager or the owner to confirm.</span>
+  {% if can_withdraw %}
+  <form method="post" action="{{ url_for('inventory.issue_void_withdraw', issue_id=issue.id) }}"
+        onsubmit="return confirm('Withdraw this void request? The sale stays.')">
+    <button type="submit" class="btn small danger">Withdraw request</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {% if can_confirm %}
 <h2>Confirm or reject the void request</h2>
 <form method="post" action="{{ url_for('inventory.issue_void_review', issue_id=issue.id) }}" class="filters">

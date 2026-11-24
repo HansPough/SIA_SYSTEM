@@ -179,6 +179,44 @@ def create_item(form, user_id):
     return row["id"], code, notes
 
 
+def item_open_documents(item_id):
+    """Open paperwork that would be stranded if this item were switched off."""
+    b, out = _b(), []
+    rf = b.all("SELECT DISTINCT r.rf_no FROM requisition_items x JOIN requisitions r ON r.id = x.rf_id "
+               "WHERE x.item_id = :i AND r.status NOT IN ('closed', 'cancelled') ORDER BY r.rf_no", i=item_id)
+    if rf:
+        out.append("%d open RF%s (%s)" % (len(rf), "" if len(rf) == 1 else "s",
+                                          inv.capped_list([r["rf_no"] for r in rf])))
+    ref = b.all("SELECT DISTINCT r.ref_no FROM replenishment_items x JOIN replenishments r ON r.id = x.ref_id "
+                "WHERE x.item_id = :i AND r.status NOT IN ('closed', 'cancelled') ORDER BY r.ref_no", i=item_id)
+    if ref:
+        out.append("%d open REF%s (%s)" % (len(ref), "" if len(ref) == 1 else "s",
+                                           inv.capped_list([r["ref_no"] for r in ref])))
+    po = b.all("SELECT DISTINCT po.po_no FROM purchase_order_items x JOIN purchase_orders po ON po.id = x.po_id "
+               "WHERE x.item_id = :i AND po.status IN ('draft', 'sent', 'partially_received') ORDER BY po.po_no",
+               i=item_id)
+    if po:
+        out.append("%d open PO%s (%s)" % (len(po), "" if len(po) == 1 else "s",
+                                          inv.capped_list([r["po_no"] for r in po])))
+    ts = b.all("SELECT DISTINCT t.ts_no FROM transfer_slip_items x JOIN transfer_slips t ON t.id = x.ts_id "
+               "WHERE x.item_id = :i AND t.status IN ('draft', 'assigned', 'loaded', 'in_transit') ORDER BY t.ts_no",
+               i=item_id)
+    if ts:
+        out.append("%d active transfer slip%s (%s)" % (len(ts), "" if len(ts) == 1 else "s",
+                                                       inv.capped_list([r["ts_no"] for r in ts])))
+    reserved = b.one("SELECT COALESCE(SUM(qty), 0) AS n FROM reservations WHERE item_id = :i AND status = 'reserved'",
+                     i=item_id)["n"]
+    if reserved:
+        out.append("%d unit%s reserved for RFs" % (reserved, "" if reserved == 1 else "s"))
+    adj = b.all("SELECT DISTINCT a.adj_no FROM stock_adjustment_items x JOIN stock_adjustments a "
+                "ON a.id = x.adjustment_id WHERE x.item_id = :i AND a.status = 'pending' ORDER BY a.adj_no",
+                i=item_id)
+    if adj:
+        out.append("%d pending adjustment%s (%s)" % (len(adj), "" if len(adj) == 1 else "s",
+                                                     inv.capped_list([r["adj_no"] for r in adj])))
+    return out
+
+
 def update_item(item_id, form, user_id):
     """Returns (changed, notes). The item code never changes after the item is created."""
     old = get_item(item_id)
@@ -193,6 +231,9 @@ def update_item(item_id, form, user_id):
         on_hand = total_on_hand(item_id)
         if on_hand > 0:
             raise InventoryError("Cannot deactivate: %d units are still in stock. Adjust the stock to zero first." % on_hand)
+        open_docs = item_open_documents(item_id)
+        if open_docs:
+            raise InventoryError("Cannot deactivate: %s." % "; ".join(open_docs))
     old_vals = {c: old[c] for c in spec_cols + ("item_name",)}
     new_vals = {c: v[c] for c in spec_cols + ("item_name",)}
     changes = {c: new_vals[c] for c in new_vals if (old_vals[c] or None) != (new_vals[c] or None)}

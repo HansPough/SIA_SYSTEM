@@ -10,6 +10,7 @@
   <div><dt>Date</dt><dd>{{ (adj.created_at|string)[:10] }}</dd></div>
   <div><dt>Location</dt><dd>{{ adj.location }}</dd></div>
   <div><dt>Reason</dt><dd>{{ adj.reason|replace('_', ' ')|capitalize }}</dd></div>
+  {% if adj.source_ar_id %}<div><dt>Linked AR</dt><dd>{% if ar_ok %}<a href="{{ url_for('documents.view', doc_type='AR', doc_id=adj.source_ar_id) }}">{{ adj.source_ar_no }}</a>{% else %}{{ adj.source_ar_no }}{% endif %}</dd></div>{% endif %}
   <div><dt>Requested by</dt><dd>{{ adj.requested_by_name }}</dd></div>
   <div><dt>Reviewed by</dt><dd>{{ adj.reviewed_by_name or '–' }}</dd></div>
   <div><dt>Remarks</dt><dd>{{ adj.remarks or '–' }}</dd></div>
@@ -24,6 +25,12 @@
 {% if current_role == 'owner' and adj.status == 'pending' and not can_review %}<p class="muted">The manager of this location approves this adjustment. The result shows here.</p>{% endif %}
 <div class="actions">
   {% if can_review %}<a class="btn primary" href="{{ url_for('inventory.adjustment_review', adj_id=adj.id) }}">Review and decide</a>{% endif %}
+  {% if can_cancel %}
+  <form method="post" action="{{ url_for('inventory.adjustment_cancel', adj_id=adj.id) }}"
+        onsubmit="return confirm('Cancel this adjustment? No stock changes.')">
+    <button type="submit" class="btn danger">Cancel adjustment</button>
+  </form>
+  {% endif %}
   <a class="btn ghost" href="{{ url_for('inventory.adjustment_list') }}">Back</a>
 </div>
 </div>

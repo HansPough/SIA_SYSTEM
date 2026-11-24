@@ -44,6 +44,7 @@ REQUIRED_COLUMNS = {
     "notifications": ["snoozed_until", "snoozed_by"],                                    # migration 013
     "purchase_approvals": ["batch_id"],                                                  # migration 012
     "replenishment_items": ["qty_dropped", "dropped_reason"],                            # migration 012
+    "quotation_items": ["superseded_at"],                                                # migration 018
     "purchase_approval_items": ["approval_id", "replenishment_item_id", "item_id", "qty", "unit_price"],
 }
 

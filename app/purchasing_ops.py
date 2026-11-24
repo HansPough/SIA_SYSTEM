@@ -297,13 +297,18 @@ def get_ref(ref_id, user):
         "SELECT rq.id AS rfq_id, rq.rfq_no, rq.status AS rfq_status, rq.reply_deadline, "
         "s.id AS supplier_id, s.supplier_name, rs.sent_at, rs.replied_at, "
         "(SELECT q.total_amount FROM quotations q WHERE q.rfq_id = rq.id AND q.supplier_id = s.id) AS total_quoted, "
-        "(SELECT q.id FROM quotations q WHERE q.rfq_id = rq.id AND q.supplier_id = s.id) AS quotation_id "
+        "(SELECT q.id FROM quotations q WHERE q.rfq_id = rq.id AND q.supplier_id = s.id) AS quotation_id, "
+        "(SELECT COUNT(*) FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id "
+        " WHERE q.rfq_id = rq.id AND q.supplier_id = s.id AND qi.superseded_at IS NULL) AS n_live_lines "
         "FROM rfqs rq JOIN rfq_suppliers rs ON rs.rfq_id = rq.id "
         "JOIN suppliers s ON s.id = rs.supplier_id "
         "WHERE rq.ref_id = :r ORDER BY rq.id, s.supplier_name", r=ref_id)
     head["approvals"] = _b().all(
         "SELECT pa.*, s.supplier_name FROM purchase_approvals pa JOIN suppliers s ON s.id = pa.supplier_id "
         "WHERE pa.ref_id = :r ORDER BY pa.id", r=ref_id)
+    for a in head["approvals"]:
+        a["can_withdraw"] = (user["role"] == "warehouse_manager" and a["decision"] == "pending"
+                             and a["submitted_by"] == user["id"])
     head["pos"] = _b().all(
         "SELECT po.*, s.supplier_name, "
         "COALESCE((SELECT SUM(poi.qty_ordered * poi.unit_price) FROM purchase_order_items poi WHERE poi.po_id = po.id), 0) "
@@ -524,6 +529,14 @@ def _ref_rfq(ref_id):
     return _b().one("SELECT * FROM rfqs WHERE ref_id = :r ORDER BY id DESC LIMIT 1", r=ref_id)
 
 
+def _latest_quote_for_supplier(ref_id, supplier_id):
+    """The supplier's newest reply on this REF, across every RFQ round."""
+    return _b().one(
+        "SELECT q.*, rq.rfq_no FROM quotations q JOIN rfqs rq ON rq.id = q.rfq_id "
+        "WHERE rq.ref_id = :r AND q.supplier_id = :s ORDER BY q.id DESC LIMIT 1",
+        r=ref_id, s=supplier_id)
+
+
 def quotation_form_data(ref_id, user, supplier_id=None):
     """Everything the quotation screen needs.
 
@@ -532,8 +545,8 @@ def quotation_form_data(ref_id, user, supplier_id=None):
     to put them on the RFQ, and saving that quotation adds them to it.
     ``supplier_prices`` maps supplier -> item -> agreed price valid today, so
     the unit-price boxes can be filled instead of typed one by one.
-    ``existing_items`` holds the saved quotation being edited, when the page
-    was opened for one supplier.
+    ``existing_items`` holds the supplier's newest saved reply on this REF
+    (whatever RFQ round it came from) when the page was opened for one supplier.
     """
     ref = _ref_for_write(user, ref_id)
     rfq = _ref_rfq(ref_id)
@@ -575,12 +588,16 @@ def quotation_form_data(ref_id, user, supplier_id=None):
 
     existing = None
     existing_items = {}
+    loaded_from = None
     if rfq and selected:
-        existing = _b().one("SELECT * FROM quotations WHERE rfq_id = :r AND supplier_id = :s",
-                            r=rfq["id"], s=selected)
+        existing = _latest_quote_for_supplier(ref_id, selected)
         if existing:
-            for qi in _b().all("SELECT * FROM quotation_items WHERE quotation_id = :q",
-                               q=existing["id"]):
+            # The newest reply may belong to an earlier RFQ round. Load it for editing;
+            # saving records it under the current RFQ and supersedes the older lines.
+            if existing["rfq_id"] != rfq["id"]:
+                loaded_from = existing["rfq_no"]
+            for qi in _b().all("SELECT * FROM quotation_items WHERE quotation_id = :q "
+                               "AND superseded_at IS NULL", q=existing["id"]):
                 qi["unit_price"] = _price_text(qi["unit_price"])
                 existing_items[qi["replenishment_item_id"]] = qi
     # Show only what still needs a supplier (an item already ordered or dropped needs no new quotation),
@@ -591,7 +608,8 @@ def quotation_form_data(ref_id, user, supplier_id=None):
              if still_open.get(it["ref_item_id"], 0) > 0 or it["ref_item_id"] in existing_items]
     return {"ref": ref, "rfq": rfq, "suppliers": suppliers, "ref_items": items,
             "supplier_prices": supplier_prices, "selected_supplier_id": selected,
-            "existing": existing, "existing_items": existing_items, "today": _today().isoformat()}
+            "existing": existing, "existing_items": existing_items, "today": _today().isoformat(),
+            "loaded_from_rfq": loaded_from}
 
 
 def _ref_items(ref_id):
@@ -691,11 +709,35 @@ def save_quotation(user, ref_id, supplier_id, quotation_ref, quotation_date, val
             "unit_price, lead_time_days) VALUES (:q, :ri, :i, :qty, :p, :lead)",
             q=quotation_id, ri=r["ref_item_id"], i=r["item_id"], qty=r["qty"],
             p=r["unit_price"], lead=r["lead"])
+    _supersede_older_lines(ref_id, sid, quotation_id)
     _b().execute("UPDATE rfq_suppliers SET replied_at = CURRENT_TIMESTAMP "
                  "WHERE rfq_id = :r AND supplier_id = :s", r=rfq["id"], s=sid)
     inv.write_audit(user["id"], action, "quotations", quotation_id,
                     new={"supplier": supplier["supplier_name"], "ref_no": ref["ref_no"], "total": total})
     return quotation_id, supplier["supplier_name"]
+
+
+def _supersede_older_lines(ref_id, supplier_id, quotation_id):
+    """The items in the new reply replace this supplier's older lines for the same items.
+
+    A second RFQ round can re-quote an item. Leaving the round-1 line live would let a
+    stale price compete with the new one on Choose suppliers, so it is marked superseded.
+    Lines for items this reply does not include stay valid: they are still the supplier's
+    last word on those items. The older quotation totals are recomputed to match.
+    """
+    _b().execute(
+        "UPDATE quotation_items SET superseded_at = CURRENT_TIMESTAMP "
+        "WHERE superseded_at IS NULL AND quotation_id <> :q "
+        "AND replenishment_item_id IN (SELECT replenishment_item_id FROM quotation_items WHERE quotation_id = :q) "
+        "AND quotation_id IN (SELECT oq.id FROM quotations oq JOIN rfqs rq ON rq.id = oq.rfq_id "
+        "                      WHERE rq.ref_id = :r AND oq.supplier_id = :s)",
+        q=quotation_id, r=ref_id, s=supplier_id)
+    _b().execute(
+        "UPDATE quotations SET total_amount = COALESCE((SELECT SUM(qi.qty_offered * qi.unit_price) "
+        "FROM quotation_items qi WHERE qi.quotation_id = quotations.id AND qi.superseded_at IS NULL), 0) "
+        "WHERE id IN (SELECT oq.id FROM quotations oq JOIN rfqs rq ON rq.id = oq.rfq_id "
+        "             WHERE rq.ref_id = :r AND oq.supplier_id = :s AND oq.id <> :q)",
+        q=quotation_id, r=ref_id, s=supplier_id)
 
 
 # ---------------------------------------------------------------------
@@ -721,7 +763,8 @@ def _line_options(ref_id, lines):
             "q.id AS quotation_id, q.valid_until, s.id AS supplier_id, s.supplier_name "
             "FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id "
             "JOIN rfqs rq ON rq.id = q.rfq_id JOIN suppliers s ON s.id = q.supplier_id "
-            "WHERE rq.ref_id = :r AND s.is_active AND qi.qty_offered > 0 ORDER BY s.supplier_name", r=ref_id):
+            "WHERE rq.ref_id = :r AND s.is_active AND qi.qty_offered > 0 "
+            "AND qi.superseded_at IS NULL ORDER BY s.supplier_name", r=ref_id):
         if _dec(row["unit_price"]) <= 0:
             # A reply stored before prices were required to be above zero: it is not an offer.
             unpriced.setdefault(row["rid"], []).append(row["supplier_name"])
@@ -736,13 +779,22 @@ def _line_options(ref_id, lines):
                         "ORDER BY supplier_name")
     for ln in lines:
         options = list(quotes.get(ln["ref_item_id"], []))
+        active_quoted = {o["supplier_id"] for o in options if not o["expired"]}
+        replaced = set()
         for sup in regulars:
+            if sup["id"] in active_quoted:
+                continue                       # one offer per supplier: a live quotation wins
             price = _valid_agreed_price(sup["id"], ln["item_id"])
             if price is not None and _dec(price["agreed_price"]) > 0:
                 options.append({"key": "a:%d" % sup["id"], "kind": "agreed_price", "supplier_id": sup["id"],
                                 "supplier_name": sup["supplier_name"] + " (agreed price)",
                                 "max_qty": ln["open"], "unit_price": _price_text(price["agreed_price"]),
                                 "lead": None, "expired": False})
+                replaced.add(sup["id"])
+        if replaced:
+            # An expired quotation is no offer any more: show the agreed price in its place.
+            options = [o for o in options
+                       if not (o["kind"] == "quotation" and o["expired"] and o["supplier_id"] in replaced)]
         usable = [o for o in options if not o["expired"]]
         full = [o for o in usable if o["max_qty"] >= ln["open"]]
         if full:
@@ -754,7 +806,19 @@ def _line_options(ref_id, lines):
         ln["options"] = options
         ln["unpriced"] = unpriced.get(ln["ref_item_id"], [])
         ln["default"] = pick["key"] if pick else "open"
+        ln["qty_default"] = min(pick["max_qty"], ln["open"]) if pick else ln["open"]
+        ln["subtotal"] = (_price_text(_amount(ln["qty_default"], pick["unit_price"])) if pick else None)
     return lines
+
+
+def _split_name(supplier_name, kinds):
+    """Keep the agreed-price tag when it applies, and explain a supplier whose lines mix bases."""
+    base = supplier_name.replace(" (agreed price)", "")
+    if kinds == {"agreed_price"}:
+        return base + " (agreed price)"
+    if len(kinds) > 1:
+        return base + " (quotation + agreed price)"
+    return base
 
 
 def _default_split(lines):
@@ -764,13 +828,15 @@ def _default_split(lines):
         opt = next((o for o in ln["options"] if o["key"] == ln["default"]), None)
         if ln["default"] == "open" or opt is None:
             continue
-        g = groups.setdefault((opt["supplier_id"], opt["kind"]),
-                              {"supplier_name": opt["supplier_name"], "lines": []})
+        g = groups.setdefault(opt["supplier_id"],
+                              {"supplier_name": opt["supplier_name"], "lines": [], "kinds": set()})
+        g["kinds"].add(opt["kind"])
         g["lines"].append({"name": ln["item_name"], "qty": min(opt["max_qty"], ln["open"]),
                            "unit_price": opt["unit_price"]})
     out = []
     for g in groups.values():
         g["total"] = _total_text(g["lines"])
+        g["supplier_name"] = _split_name(g["supplier_name"], g["kinds"])
         out.append(g)
     out.sort(key=lambda g: g["supplier_name"].lower())
     return out
@@ -828,18 +894,27 @@ def submit_choices(user, ref_id, choices):
         if qty < 1 or qty > top:
             raise InventoryError("%s: order between 1 and %d from %s." % (name, top, option["supplier_name"]))
         kind, _, ident = choice.partition(":")
-        group = groups.setdefault((option["supplier_id"], option["kind"]),
-                                  {"rows": [], "quotation_ids": set()})
+        group = groups.setdefault(option["supplier_id"],
+                                  {"rows": [], "quotation_ids": set(), "kinds": set()})
         group["rows"].append({"ln": ln, "qty": qty, "price": option["unit_price"]})
+        group["kinds"].add(option["kind"])
         if kind == "q":
             group["quotation_ids"].add(int(ident))
     if not groups:
         raise InventoryError("Choose a supplier for at least one item. To stop ordering this REF, cancel it instead.")
 
     first_id, n = None, 0
-    for (sid, basis), group in groups.items():
-        qids = group["quotation_ids"]
-        qid = next(iter(qids)) if basis == "quotation" and len(qids) == 1 else None
+    for sid, group in groups.items():
+        qids, kinds = group["quotation_ids"], group["kinds"]
+        if kinds == {"agreed_price"}:
+            basis, qid = "agreed_price", None
+        elif kinds == {"quotation"}:
+            basis = "quotation"
+            qid = next(iter(qids)) if len(qids) == 1 else None
+        else:
+            # One supplier can pay quotation prices for some lines and agreed prices for others;
+            # they still get one approval and one PO.
+            basis, qid = "mixed", None
         row = _b().one(
             "INSERT INTO purchase_approvals (ref_id, supplier_id, basis, quotation_id, decision, submitted_by) "
             "VALUES (:r, :s, :b, :q, 'pending', :u) RETURNING id", r=ref_id, s=sid, b=basis, q=qid, u=user["id"])
@@ -1021,6 +1096,29 @@ def list_approvals(user, decision="", q="", page=1):
     return res
 
 
+def _suggested_expected(rows):
+    """The latest quotation date + lead time across the pending suppliers, not in the past.
+
+    Goods cannot arrive before the slowest supplier has delivered, and the owner sets one
+    date for every PO in the batch, so the latest suggestion wins. Only quotation-based
+    suppliers carry a lead time; agreed prices have none.
+    """
+    best = None
+    for row in rows:
+        if not row.get("quotation_id"):
+            continue
+        q = _b().one(
+            "SELECT q.quotation_date, MAX(qi.lead_time_days) AS lead FROM quotations q "
+            "LEFT JOIN quotation_items qi ON qi.quotation_id = q.id AND qi.superseded_at IS NULL "
+            "WHERE q.id = :q GROUP BY q.quotation_date", q=row["quotation_id"])
+        if q is None or q["lead"] is None:
+            continue
+        d = _date(q["quotation_date"], "Quotation date") + dt.timedelta(days=int(q["lead"]))
+        if best is None or d > best:
+            best = d
+    return max(best, _today()).isoformat() if best else None
+
+
 def get_approval(approval_id, user):
     appr = _b().one(
         "SELECT pa.*, r.ref_no, r.warehouse_id, r.status AS ref_status, s.supplier_name, "
@@ -1055,10 +1153,46 @@ def get_approval(approval_id, user):
         appr["batch"].append(row)
     appr["batch_total"] = _total_text([l for r in appr["batch"] for l in r["lines"]])
     appr["batch_pending"] = [r for r in appr["batch"] if r["decision"] == "pending"]
+    appr["suggested_expected"] = _suggested_expected(appr["batch_pending"])
     coverage_lines = cov.coverage(appr["ref_id"])
     appr["open_lines"] = [c for c in coverage_lines if c["open"] > 0]
     appr["dropped_lines"] = [c for c in coverage_lines if c["qty_dropped"] > 0]
     return appr
+
+
+def approval_ref_id(approval_id):
+    row = _b().one("SELECT ref_id FROM purchase_approvals WHERE id = :i", i=approval_id)
+    return row["ref_id"] if row else None
+
+
+def can_withdraw_approval(user, appr):
+    """The warehouse manager who submitted it can take it back while the owner has not decided."""
+    if appr["decision"] != "pending":
+        return False, "This approval was already %s." % appr["decision"]
+    if (user["role"] != "warehouse_manager" or appr["warehouse_id"] != user["location_id"]
+            or appr["submitted_by"] != user["id"]):
+        return False, "Only the warehouse manager who submitted it can withdraw it."
+    return True, ""
+
+
+def withdraw_approval(user, approval_id):
+    """Delete a pending approval so the REF can be priced again. Returns (ref_id, supplier_name)."""
+    appr = _b().one(
+        "SELECT pa.*, r.warehouse_id, s.supplier_name FROM purchase_approvals pa "
+        "JOIN replenishments r ON r.id = pa.ref_id JOIN suppliers s ON s.id = pa.supplier_id "
+        "WHERE pa.id = :i", i=approval_id)
+    if appr is None:
+        raise InventoryError("Approval not found.")
+    ok, why = can_withdraw_approval(user, appr)
+    if not ok:
+        raise InventoryError(why)
+    _b().execute("DELETE FROM purchase_approval_items WHERE approval_id = :a", a=approval_id)
+    _b().execute("DELETE FROM purchase_approvals WHERE id = :a", a=approval_id)
+    cov.refresh_status(appr["ref_id"])          # the withdrawn lines are open again
+    inv.write_audit(user["id"], "withdraw", "purchase_approvals", approval_id,
+                    old={"decision": "pending", "supplier": appr["supplier_name"],
+                         "submitted_by": appr["submitted_by"]})
+    return appr["ref_id"], appr["supplier_name"]
 
 
 def decide_approval(user, approval_id, decision, remarks, expected_date=None, terms=None):

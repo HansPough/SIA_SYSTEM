@@ -364,6 +364,7 @@ CREATE TABLE quotation_items (
     qty_offered           INTEGER NOT NULL CHECK (qty_offered >= 0),
     unit_price            NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
     lead_time_days        INTEGER CHECK (lead_time_days >= 0),
+    superseded_at         TIMESTAMPTZ,          -- set when a later round re-quotes this item (migration 018)
     UNIQUE (quotation_id, replenishment_item_id)
 );
 
@@ -372,8 +373,8 @@ CREATE TABLE purchase_approvals (
     id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ref_id        INTEGER NOT NULL REFERENCES replenishments(id),
     supplier_id   INTEGER NOT NULL REFERENCES suppliers(id),
-    basis         VARCHAR(15) NOT NULL CHECK (basis IN ('quotation', 'agreed_price')),
-    quotation_id  INTEGER REFERENCES quotations(id),
+    basis         VARCHAR(15) NOT NULL CHECK (basis IN ('quotation', 'agreed_price', 'mixed')),
+    quotation_id  INTEGER REFERENCES quotations(id),   -- only when every line came from one quotation
     decision      VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending', 'approved', 'rejected')),
     submitted_by  INTEGER NOT NULL REFERENCES users(id),
     submitted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -381,7 +382,6 @@ CREATE TABLE purchase_approvals (
     decided_at    TIMESTAMPTZ,
     remarks       TEXT,
     batch_id      INTEGER,                      -- approvals submitted together share a batch (migration 012)
-    CHECK (basis <> 'quotation' OR quotation_id IS NOT NULL),
     CHECK (decision = 'pending' OR decided_by IS NOT NULL)
 );
 

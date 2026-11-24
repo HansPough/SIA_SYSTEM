@@ -9,7 +9,7 @@ Files:
 - `app/delivery_ops.py` — queries and save workflows (new).
 - `app/blueprints/delivery/` — `transfers.py`, `shop_receiving.py`, `supplier_receiving.py`.
 - `app/templates/delivery/` — 20 templates with real data.
-- `tests/test_delivery_screens.py` — 26 click-through tests (new).
+- `tests/test_delivery_screens.py` — 39 click-through tests.
 
 ## Flow
 
@@ -72,6 +72,9 @@ PO sent ─► goods arrive ─► receiving check (RM) ─► accepted stock in
 | AR variance field | The AR says **Yes** with the total unit difference (e.g. `Yes (-24 pcs)`) whenever a line's received quantity differs from what that delivery was expected to bring (`transfer_slip_items.qty_needed`), so a short dispatch counts even when every dispatched unit was accepted. Each AR line shows Requested, Received, Diff and Remarks, with a totals row; a negative Diff is printed in bold red. The Remarks cell carries the warehouse's short-dispatch reason and, when the shop also rejected part of the line, its variance reason after it (`reason · reason`). |
 | AR sign-off | The AR is generated when the shop confirms delivery, so it has no "Prepared by" line. It keeps the receiver's signature, time and account, and the footer says it was generated automatically. |
 | Shop variance auto-resolve | `acknowledgment_receipt_items.variance_resolved_at` is set automatically when a later delivery raises `qty_delivered` to `qty_requested` for that RF line. The incoming-delivery list shows the variance as Open (n) or Resolved. |
+| Last shop manager | The owner cannot deactivate a shop's last active shop manager while a TS is `in_transit` to that shop or an AR there has no `received_by` signature, because nobody could receive the delivery. Add another shop manager first. |
+| No manual resolve | **Discrepancies → To shops** is read-only: every row opens its AR. An open variance clears only by a later delivery that fills the RF line, or by approving a stock adjustment linked to the AR. A `partially_delivered` RF has no other close path: Module 1 only cancels `draft`/`open` RFs, so a balance that will never be sent stays open (see Known gaps). |
+| Variance settled by an adjustment | Approving a stock adjustment whose **Linked AR no.** names an AR resolves every open variance line on that AR (a manager's own adjustment does this in the same save). The adjustment detail shows the AR as a link. |
 | Accepted / rejected at the shop | The shop receiving page uses the same pair of boxes: type accepted and rejected fills in (`qty on TS - accepted`), or type rejected and accepted fills in. Both blank means everything on the TS was accepted; the server applies the same rule without JavaScript. |
 | Draft TS visibility | A shop manager can only open a TS that is `in_transit` or already delivered, never a draft being prepared. |
 | Supplier receiving | A PO must be `sent` or `partially_received` first. `accepted + rejected` must equal `delivered`; rejected stock needs a reason. Only **accepted** stock is added (`supplier_receipt`). |
@@ -82,9 +85,17 @@ PO sent ─► goods arrive ─► receiving check (RM) ─► accepted stock in
 | Numbers | `inv.next_doc_no()` for `TS`, `AR`, `RM`, `DR`; a failed save rolls back without burning a number. |
 | Drivers/vehicles | Managed by the warehouse manager; only active ones can be assigned. Plate numbers are unique (case-insensitive). |
 
+## Known gaps
+
+A `partially_delivered` RF cannot be closed unless the balance is later delivered, because the
+manual shop-variance resolve (and its Close RF option) was removed and Module 1 only cancels
+`draft`/`open` RFs. A line the shop will never take therefore keeps the RF and its variance
+open. Closing it needs either a small "close remainder" action in Module 1 or a delivery of the
+balance.
+
 ## Tests and verification
 
-`python -m unittest discover tests -v` → **152 tests, all passing** (Inventory, Requisition,
+`python -m unittest discover tests -v` → **382 tests, all passing** (Inventory, Requisition,
 Purchasing and Delivery screens plus the stock core).
 
 A full flow was also run by hand on PostgreSQL: shop RF → reserve → prepare TS → assign → load

@@ -170,7 +170,9 @@ def issue_detail(issue_id):
         return render_template("404.html"), 404
     can_request, _w1 = ops.can_request_void(user, issue)
     can_confirm, _w2 = ops.can_confirm_void(user, issue)
-    return render_template("inventory/issue_detail.html", issue=issue, can_request=can_request, can_confirm=can_confirm)
+    can_withdraw, _w3 = ops.can_withdraw_void(user, issue)
+    return render_template("inventory/issue_detail.html", issue=issue, can_request=can_request,
+                           can_confirm=can_confirm, can_withdraw=can_withdraw)
 
 
 @bp.route("/issues/<int:issue_id>/void-request", methods=["POST"])
@@ -184,6 +186,21 @@ def issue_void_request(issue_id):
         flash(str(e), "error")
     else:
         flash("Void requested for %s. Waiting for your manager." % issue_no, "success")
+    return redirect(url_for("inventory.issue_detail", issue_id=issue_id))
+
+
+# The requester can take the void back until the manager (or the owner) reviews it.
+@bp.route("/issues/<int:issue_id>/void-withdraw", methods=["POST"])
+@roles_required("shop_staff", "shop_manager")
+def issue_void_withdraw(issue_id):
+    try:
+        issue_no = ops.withdraw_void(current_user(), issue_id)
+        inv.commit()
+    except InventoryError as e:
+        inv.rollback()
+        flash(str(e), "error")
+    else:
+        flash("Void request for %s withdrawn. The sale stays." % issue_no, "success")
     return redirect(url_for("inventory.issue_detail", issue_id=issue_id))
 
 
@@ -343,7 +360,27 @@ def adjustment_detail(adj_id):
     if adj is None:
         return render_template("404.html"), 404
     can, _why = ops.can_review(user, adj)
-    return render_template("inventory/adjustment_detail.html", adj=adj, can_review=can)
+    can_cancel, _cwhy = ops.can_cancel_adjustment(user, adj)
+    ar_ok = bool(adj.get("source_ar_id") and docs.load("AR", adj["source_ar_id"], user))
+    return render_template("inventory/adjustment_detail.html", adj=adj, can_review=can, can_cancel=can_cancel,
+                           ar_ok=ar_ok)
+
+
+# The requester can cancel their own pending adjustment until a manager reviews it.
+@bp.route("/adjustments/<int:adj_id>/cancel", methods=["POST"])
+@roles_required("warehouse_manager", "warehouse_staff", "shop_manager", "shop_staff")
+def adjustment_cancel(adj_id):
+    try:
+        adj_no = ops.cancel_adjustment(current_user(), adj_id)
+        inv.commit()
+    except InventoryError as e:
+        inv.rollback()
+        flash(str(e), "error")
+        if ops.get_adjustment(adj_id, scope_location(current_user())):
+            return redirect(url_for("inventory.adjustment_detail", adj_id=adj_id))
+        return redirect(url_for("inventory.adjustment_list"))
+    flash("%s cancelled." % adj_no, "success")
+    return redirect(url_for("inventory.adjustment_list"))
 
 
 # Each manager approves the adjustments of their OWN location only:

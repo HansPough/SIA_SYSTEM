@@ -429,6 +429,56 @@ class ShopReceivingTests(Base):
         self.assertEqual(inv.get_balance(A, SHOP)["on_hand"], 5)
         self.assertEqual(self.be.one("SELECT qty_delivered FROM requisition_items WHERE id = 1")["qty_delivered"], 5)
 
+    def test_discrepancies_list_is_read_only(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        ari = self.be.one("SELECT id FROM acknowledgment_receipt_items WHERE item_id = 1")
+        for who in ("owner", "whmgr"):
+            self.login(who)
+            page = self.c.get("/delivery/variances").get_data(as_text=True)
+            self.assertIn(ar["ar_no"], page)
+            self.assertIn("one tire missing", page)
+            self.assertIn("/documents/AR/%d" % ar["id"], page)
+            self.assertNotIn('name="resolution_note"', page)
+            self.assertNotIn("/variances/%d/resolve" % ari["id"], page)
+
+    def test_approving_an_adjustment_linked_to_the_ar_resolves_the_variance(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        self.login("whstaff")
+        r = self.c.post("/inventory/adjustments/new", data={
+            "reason": "Delivery variance", "ar_no": ar["ar_no"], "remarks": "written off at the shop",
+            "item_id[]": ["1"], "qty_actual[]": ["15"], "item_remarks[]": ["short at shop"]})
+        self.assertEqual(r.status_code, 302, self.flashes(r))
+        adj_id = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        page = self.c.get("/inventory/adjustments/%d" % adj_id).get_data(as_text=True)
+        self.assertIn(ar["ar_no"], page)
+        self.assertIn("/documents/AR/%d" % ar["id"], page)                      # the link is shown
+        self.assertIsNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                      "WHERE item_id = 1")["variance_resolved_at"])
+        self.login("whmgr")
+        self.c.post("/inventory/adjustments/%d/review" % adj_id,
+                    data={"decision": "approve", "review_remarks": "approved write-off"})
+        self.assertIsNotNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                         "WHERE item_id = 1")["variance_resolved_at"])
+        audit = self.be.one("SELECT * FROM audit_log WHERE table_name = 'acknowledgment_receipt_items' "
+                            "AND action = 'resolve'")
+        self.assertIn("adjustment", audit["new_values"])
+
+    def test_a_manager_linked_adjustment_resolves_the_variance_on_save(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        self.login("whmgr")
+        r = self.c.post("/inventory/adjustments/new", data={
+            "reason": "Delivery variance", "ar_no": ar["ar_no"],
+            "item_id[]": ["1"], "qty_actual[]": ["15"]})
+        self.assertEqual(r.status_code, 302, self.flashes(r))
+        self.assertIsNotNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                         "WHERE item_id = 1")["variance_resolved_at"])
+
     def test_cannot_receive_a_ts_that_is_not_in_transit(self):
         self.prepare()
         self.login("shopmgr")

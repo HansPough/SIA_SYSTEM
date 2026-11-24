@@ -10,7 +10,7 @@ Files:
 - `app/purchasing_ops.py` — queries and save workflows (new).
 - `app/blueprints/purchasing.py` — the 17 screens/actions, thin routes.
 - `app/templates/purchasing/` — 17 templates with real data.
-- `tests/test_purchasing_screens.py` — 23 click-through tests (new).
+- `tests/test_purchasing_screens.py` — 68 click-through tests.
 
 Nothing here changes stock. Receiving (Delivery) is what will call the Inventory stock
 functions.
@@ -45,6 +45,7 @@ restock alert ──► REF (draft ─► submitted)
 | Choose supplier | `/purchasing/ref/<id>/compare` | warehouse manager |
 | Approval list | `/purchasing/approvals` | owner, warehouse manager (own warehouse) |
 | Approval detail (approve/reject) | `/purchasing/approvals/<id>` | owner |
+| Withdraw a pending approval | `/purchasing/approvals/<id>/withdraw` (POST) | the warehouse manager who submitted it |
 | PO list / detail (+ mark sent) | `/purchasing/po`, `/<id>` | warehouse manager, owner, warehouse staff |
 | Suppliers list | `/purchasing/suppliers` | warehouse manager, owner |
 | Supplier new / edit (with agreed prices) | `/purchasing/suppliers/new`, `/<id>/edit` | warehouse manager |
@@ -62,17 +63,22 @@ restock alert ──► REF (draft ─► submitted)
 | Quotations | One per supplier per RFQ. Saving the same supplier again **replaces** their lines and totals. `qty_offered` can be less than requested (0 = not offered). |
 | Quotation supplier list | Every **active** supplier is listed, with the ones the RFQ was sent to first. A supplier who replied but was not recorded as sent is accepted and added to `rfq_suppliers` (with `sent_at` left empty), instead of refusing the reply. |
 | Quotation prices | Opening the page selects the RFQ supplier and fills the unit-price boxes from that supplier's valid `supplier_items.agreed_price` rows, so 40+ lines do not have to be typed. Opening a supplier who already has a quotation reloads that quotation's quantities and prices; the screen says the user must change a price to what the supplier actually quoted. A unit price must be more than zero: an item the supplier did not offer is entered with **quantity 0**, not price 0. A stored 0-price line is never offered on **Choose suppliers** (the screen names that supplier and asks for the quotation again), so it cannot become the "cheapest" preselected supplier. |
-| Quotation expiry | A quotation whose `valid_until` is before today cannot be sent for approval; record a fresh quotation first. |
+| Quotation expiry | A quotation whose `valid_until` is before today is never offered on **Choose suppliers**, and if it is somehow chosen it refuses to send for approval (record a fresh quotation first). When the same regular supplier has a valid agreed price for that item, their agreed price is offered in place of the expired quotation (labelled "agreed price"); an expired quotation only blocks the supplier when there is no agreed price to fall back to. |
+| Quotation rounds | The Record quotation screen loads the supplier's **newest reply on the REF**, whichever RFQ round it came from, so a later round starts from their earlier quantities and prices. Saving records the reply under the current RFQ. A line re-quoted in a later round marks the older line `superseded_at`, and Choose suppliers ignores superseded lines, so a stale round-1 price can never win as "cheapest". Lines for items the supplier did not re-quote stay valid. A quotation whose lines were all replaced shows "replaced by a later quotation" on the REF page. |
+| Agreed-price prefill | Prices filled from `supplier_items.agreed_price` are labelled "agreed price" in the row and explained above the items table, so they are not mistaken for the supplier's reply. The label clears when the user types the quoted price. |
+| Expected delivery | The owner's approval screen prefills Expected delivery with the **quotation date + the largest lead time** among the pending quotations (never in the past). The owner can change it; one date is used on every PO approved in that batch. Agreed-price approvals have no lead time, so the field stays empty. |
 | Partial quotation | A quotation does not have to cover every REF line: items it does not offer simply stay open, and can go to another supplier, a later RFQ round, or a regular supplier's agreed price. The approval page lists the lines still open for the REF so the owner knows what the PO does not cover. |
 | ROP = 0 | A ROP of 0 is a real threshold, not "not set up": the item appears on the restock alert as soon as available stock reaches 0. Only an item with **no** `item_location_settings` row is treated as not configured. |
-| Choosing a supplier | **Choose suppliers** splits an REF **item by item**: each open item is sent to exactly one supplier — a recorded quotation, or a regular supplier's valid agreed prices — or kept open. The preselected offer is the cheapest per item, and a **split preview** shows each supplier with its items, quantities and total before submitting; a bulk control applies one offer to every item it covers. The screen works without an RFQ at all when agreed prices exist. One `purchase_approvals` row (decision `pending`) is written **per supplier**, all sharing a `batch_id`; the same supplier chosen across two RFQ rounds merges into a single approval (`quotation_id` is set only when every line came from one quotation). |
-| Dropping an item | Only on the REF page (**Give up**), never on Choose suppliers. A real reason (at least 5 characters, not just "drop") is required, and if the item is still at or below its reorder point it shows up in the restock alerts again. A dropped item can be restored from the REF page and then needs a supplier again. |
+| Choosing a supplier | **Choose suppliers** splits an REF **item by item**: each open item is sent to exactly one supplier — a recorded quotation, or a regular supplier's valid agreed prices — or kept open. A supplier who quoted an item appears **once**, with the quotation; their agreed price is only offered for items they did not quote (or quoted with an expired quotation). The preselected offer is the cheapest per item. Each row has its **Qty to order** prefilled with the quantity that will be ordered and its **subtotal** (qty × unit price), updated when the offer or quantity changes. A **split preview** shows, per supplier, the item count, the lines and the estimated PO total; the extra Record quotation button is not repeated at the bottom (Send for approval and Back only). The screen works without an RFQ at all when agreed prices exist. One `purchase_approvals` row (decision `pending`) is written **per supplier**, all sharing a `batch_id`; the same supplier chosen across two RFQ rounds merges into a single approval. Lines of one supplier are always grouped into **one** approval and **one** PO, even when some lines use a quotation price and others their standing agreed price — that approval has `basis = 'mixed'`. `basis = 'quotation'` with `quotation_id` is used only when every line came from the same single quotation. |
+| REF page next steps | Record quotation, Choose suppliers and Ask more suppliers also sit in the **page header**, so the next step does not require scrolling past the document and its signatures. The same buttons stay in the bottom action bar. |
+| Dropping an item | Only on the REF page (**Reason to drop...** / **Drop**), never on Choose suppliers. A real reason (at least 5 characters, not just "drop") is required, and if the item is still at or below its reorder point it shows up in the restock alerts again. A dropped item can be restored from the REF page and then needs a supplier again. |
 | Approving | Owner only. The approval form can capture the **expected delivery date** and **PO terms**; approval creates the **PO as a draft** (no email), sets the REF to `approved`, and writes the audit row. The PO page has "Mark as sent" for the warehouse manager/owner. |
 | Rejecting | Remarks are required. The REF goes back to `submitted` so the warehouse can choose again; no PO is made. |
 | Edit PO | A `draft` PO can change its expected delivery date and terms. Items and prices stay as the owner approved them; cancel and re-order if they must change. |
 | Cancel PO | A `draft` or `sent` PO can be cancelled with a reason. If no other PO is active for the REF, the REF goes back to `submitted`. A partially received PO cannot be cancelled. |
 | Supplier returns | Removed. Goods that are short or rejected at receiving are handled by the discrepancy report. The tables `supplier_returns` and `supplier_return_items` stay in the database so old data is kept, but no screen uses them. |
 | Cancel REF | Only `draft`, `submitted` or `rfq_sent`, with a reason. `for_approval` cannot be cancelled (the owner must decide first); approved/receiving/closed cannot either. Cancelling also closes the RFQ. |
+| Withdraw approval | The **Withdraw** button on the approval row of the REF page deletes a `pending` approval before the owner acts: the lines are free again, the REF returns to `submitted`/`rfq_sent`, and the items can go to another supplier or an agreed price. Only the account that submitted it (same warehouse manager) can withdraw; an approved or rejected approval cannot be withdrawn (`for_approval` otherwise waits for the owner's decision). |
 | Receiving | Delivery's `delivery.receiving_check` screen records the RM; accepted stock is added and short/rejected stock opens a DR. |
 | PO numbers | `inv.next_doc_no("PO")`; REF/RFQ use `REF`/`RFQ`. A failed save rolls back, so no number is burned. |
 
@@ -115,7 +121,7 @@ the real database; delete the demo suppliers before go-live.
 
 ## Tests
 
-`python -m unittest discover tests -v` → **152 tests, all passing** on the SQLite test schema
+`python -m unittest discover tests -v` → **382 tests, all passing** on the SQLite test schema
 (Inventory, Requisition, Purchasing, Delivery, admin/login and printable documents).
 
 A full flow was also run by hand on PostgreSQL: supplier → REF → RFQ → quotation → compare →

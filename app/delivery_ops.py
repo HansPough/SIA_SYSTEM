@@ -485,11 +485,11 @@ def list_shop_variances(user, status="", page=1):
            "JOIN items i ON i.id = ari.item_id "
            "JOIN locations s ON s.id = t.to_location_id "
            "WHERE ari.qty_received < ari.qty_expected" + where)
-    cols = ("SELECT ari.id, ar.id AS ar_id, t.id AS ts_id, ar.ar_no, t.ts_no, r.rf_no, s.code AS shop, "
-            "i.item_code, i.item_name, "
+    cols = ("SELECT ari.id, ar.id AS ar_id, t.id AS ts_id, ar.ar_no, t.ts_no, r.rf_no, "
+            "s.code AS shop, i.item_code, i.item_name, "
             "ari.qty_expected, ari.qty_received, "
             "ari.qty_expected - ari.qty_received AS qty_rejected, ari.variance_reason, "
-            "ari.variance_resolved_at, ar.received_at ")
+            "ari.variance_resolved_at ")
     res = _paged("SELECT COUNT(*) AS n " + frm,
                  cols + frm + " ORDER BY CASE WHEN ari.variance_resolved_at IS NULL THEN 0 ELSE 1 END, "
                  "ar.id DESC, i.item_name", page, **p)

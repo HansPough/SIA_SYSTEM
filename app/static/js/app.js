@@ -330,8 +330,23 @@ document.addEventListener("change", function (e) {
   var byItem = prices[sel.value] || {};
   document.querySelectorAll("#quote-lines tr[data-item-id]").forEach(function (row) {
     var input = row.querySelector("input[name='unit_price[]']");
-    if (input) { input.value = byItem[row.getAttribute("data-item-id")] || ""; }
+    var flag = row.querySelector(".agreed-flag");
+    var agreed = byItem[row.getAttribute("data-item-id")];
+    if (input) {
+      input.value = agreed || "";
+      if (agreed) { input.setAttribute("data-from-agreed", "1"); }
+      else { input.removeAttribute("data-from-agreed"); }
+    }
+    if (flag) { flag.style.display = agreed ? "" : "none"; }
   });
+});
+// A price the user typed is their own answer, so the agreed-price badge goes away.
+document.addEventListener("input", function (e) {
+  if (!e.target.matches("input[data-from-agreed]")) { return; }
+  var row = e.target.closest("tr");
+  var flag = row && row.querySelector(".agreed-flag");
+  if (flag) { flag.style.display = "none"; }
+  e.target.removeAttribute("data-from-agreed");
 });
 // Supplier receiving: accepted and rejected fill each other from delivered.
 // The server applies the same rule when one box is left blank.

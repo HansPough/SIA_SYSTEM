@@ -407,6 +407,23 @@ def approval_detail(approval_id):
     return render_template("purchasing/approval_detail.html", appr=appr, f=request.form)
 
 
+@bp.route("/approvals/<int:approval_id>/withdraw", methods=["POST"])
+@roles_required("warehouse_manager")
+def approval_withdraw(approval_id):
+    try:
+        ref_id, supplier = pur.withdraw_approval(current_user(), approval_id)
+        inv.commit()
+    except InventoryError as e:
+        inv.rollback()
+        flash(str(e), "error")
+        ref_id = pur.approval_ref_id(approval_id)
+    else:
+        flash("Approval for %s withdrawn. Choose a supplier again." % supplier, "success")
+    if ref_id:
+        return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
+    return redirect(url_for("purchasing.approval_list"))
+
+
 # ---------------------------------------------------------------------
 # Purchase orders (read; Delivery receives the goods)
 # ---------------------------------------------------------------------

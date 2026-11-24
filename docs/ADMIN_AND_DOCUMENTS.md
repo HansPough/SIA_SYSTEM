@@ -28,7 +28,16 @@ Rules enforced in `admin_ops.py`:
 - An owner has no location; shop roles need a shop; warehouse roles need a
   warehouse.
 - The owner cannot remove their own owner role or deactivate themselves.
-- A location cannot be deactivated while active users or stock still use it.
+- A location cannot be deactivated while active users or stock still use it, or while it
+  still has open paperwork: an open RF, an active or `in_transit` TS, an open PO, a pending
+  stock adjustment or a void request waiting. The error names the documents; past five it
+  lists the first five and says "…and N more".
+- An item cannot be deactivated while it has stock, or while it is on an open RF/REF/PO,
+  an active TS, a held reservation or a pending stock adjustment. The error names them,
+  capped the same way.
+- The last active shop manager of a shop cannot be deactivated, moved to another location,
+  or given another role while a delivery is `in_transit` to that shop or an AR there is
+  still unsigned.
 - A location type cannot change once the location is used on a requisition.
 - Every create/update writes an `audit_log` row (the password is not included).
 
@@ -62,9 +71,10 @@ Every detail screen now has a **Print / Sign** button. The page:
 ## Ordering from several suppliers
 
 A REF can be ordered from more than one supplier. On **Choose suppliers**, each open item goes to exactly one
-supplier (a quotation or a regular supplier's agreed price) or is **kept open**; the screen preselects the cheapest
-offer per item and shows a **split preview** — every supplier with its items, quantities and total — before you
-submit, plus a bulk control to apply one offer to every item it covers. One approval is created **per supplier**;
+supplier (a quotation or a regular supplier's agreed price) or is **kept open**; a supplier who quoted an item is
+listed once, with that quotation. The screen preselects the cheapest offer per item, prefills each row's
+**Qty to order** and shows its **subtotal**, plus a **split preview** with every supplier's items and estimated PO
+total before you submit. One approval is created **per supplier**;
 the owner sees every supplier of that submission on one approval screen and decides each one, and each approved
 supplier gets its own PO, which the warehouse manager sends. Choosing the same supplier again in a later RFQ round
 merges into that supplier's single approval and PO. The REF is "approved" only when nothing is still open and
@@ -73,7 +83,7 @@ closes when all that was wanted has been received.
 If a supplier does not have an item: **Keep open**, then **Ask more suppliers (new RFQ)** on the REF (a new round
 covering only the open items, with any suppliers), or order it at a regular supplier's agreed price — agreed prices
 work even when no RFQ was ever sent. Suppliers and their agreed prices are managed by the owner and the warehouse
-manager (**Suppliers**). **Give up** is only on the REF page and only for an item you will not order at all: it
+manager (**Suppliers**). **Drop** is only on the REF page and only for an item you will not order at all: it
 needs a real reason, and the item is flagged again in the restock alerts if it is still below its ROP.
 
 ## How signing works (migration `010_signature_integrity.sql`)

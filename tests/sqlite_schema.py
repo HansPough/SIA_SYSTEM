@@ -86,7 +86,7 @@ CREATE TABLE quotations (id INTEGER PRIMARY KEY AUTOINCREMENT, rfq_id INTEGER, s
   quotation_date TEXT, valid_until TEXT, total_amount REAL, notes TEXT, recorded_by INTEGER,
   recorded_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE (rfq_id, supplier_id));
 CREATE TABLE quotation_items (id INTEGER PRIMARY KEY AUTOINCREMENT, quotation_id INTEGER, replenishment_item_id INTEGER,
-  item_id INTEGER, qty_offered INTEGER, unit_price REAL, lead_time_days INTEGER,
+  item_id INTEGER, qty_offered INTEGER, unit_price REAL, lead_time_days INTEGER, superseded_at TEXT,
   UNIQUE (quotation_id, replenishment_item_id));
 CREATE TABLE purchase_approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, supplier_id INTEGER, basis TEXT,
   quotation_id INTEGER, decision TEXT DEFAULT 'pending', submitted_by INTEGER, submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
