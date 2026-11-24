@@ -431,6 +431,8 @@ def create_adjustment(user_id, location_id, reason, ar_no, remarks, triples, aut
     inv.write_audit(user_id, "create", "stock_adjustments", head["id"],
                     new={"adj_no": adj_no, "location": loc["code"], "reason": reason_code, "status": status,
                          "items": {i: [s, a] for i, s, a, _ in rows}})
+    if auto_approve and source_ar:
+        _resolve_ar_variances(user_id, source_ar, adj_no)
     return head["id"], adj_no
 
 
@@ -453,9 +455,11 @@ def list_adjustments(scope, status="", q="", page=1):
 def get_adjustment(adj_id, scope):
     head = _b().one(
         "SELECT a.*, l.code AS location, l.loc_type, ru.full_name AS requested_by_name, rr.code AS requester_role, "
-        "vu.full_name AS reviewed_by_name FROM stock_adjustments a JOIN locations l ON l.id = a.location_id "
+        "vu.full_name AS reviewed_by_name, ar.ar_no AS source_ar_no "
+        "FROM stock_adjustments a JOIN locations l ON l.id = a.location_id "
         "JOIN users ru ON ru.id = a.requested_by JOIN roles rr ON rr.id = ru.role_id "
-        "LEFT JOIN users vu ON vu.id = a.reviewed_by WHERE a.id = :i", i=adj_id)
+        "LEFT JOIN users vu ON vu.id = a.reviewed_by "
+        "LEFT JOIN acknowledgment_receipts ar ON ar.id = a.source_ar_id WHERE a.id = :i", i=adj_id)
     if head is None or (scope is not None and head["location_id"] != scope):
         return None
     head["lines"] = _b().all(
@@ -481,6 +485,45 @@ def can_review(user, adj):
             return True, ""
         return False, "The manager of that location approves this one. You are only notified."
     return False, "Your role cannot approve adjustments."
+
+
+def can_cancel_adjustment(user, adj):
+    if adj["status"] != "pending":
+        return False, "This adjustment was already %s." % adj["status"]
+    if adj["requested_by"] != user["id"]:
+        return False, "Only the person who raised this adjustment can cancel it."
+    return True, ""
+
+
+def cancel_adjustment(user, adj_id):
+    """Delete a pending adjustment before a manager reviews it. Returns the adjustment number."""
+    adj = get_adjustment(adj_id, None)
+    if adj is None:
+        raise InventoryError("Adjustment not found.")
+    ok, why = can_cancel_adjustment(user, adj)
+    if not ok:
+        raise InventoryError(why)
+    _b().execute("DELETE FROM stock_adjustment_items WHERE adjustment_id = :a", a=adj_id)
+    _b().execute("DELETE FROM stock_adjustments WHERE id = :a", a=adj_id)
+    inv.write_audit(user["id"], "cancel", "stock_adjustments", adj_id,
+                    old={"adj_no": adj["adj_no"], "status": "pending"})
+    return adj["adj_no"]
+
+
+def _resolve_ar_variances(user_id, ar_id, adj_no):
+    """An approved adjustment that names an AR settles that AR's open variance lines."""
+    rows = _b().all(
+        "SELECT ari.id, ar.ar_no FROM acknowledgment_receipt_items ari "
+        "JOIN acknowledgment_receipts ar ON ar.id = ari.ar_id "
+        "WHERE ari.ar_id = :a AND ari.qty_received < ari.qty_expected "
+        "AND ari.variance_resolved_at IS NULL", a=ar_id)
+    for row in rows:
+        _b().execute("UPDATE acknowledgment_receipt_items SET variance_resolved_at = CURRENT_TIMESTAMP "
+                     "WHERE id = :i", i=row["id"])
+        inv.write_audit(user_id, "resolve", "acknowledgment_receipt_items", row["id"],
+                        old={"variance_resolved_at": None},
+                        new={"variance_resolved_at": "adjustment", "adj_no": adj_no, "ar_no": row["ar_no"]})
+    return len(rows)
 
 
 def review_adjustment(user, adj_id, decision, remarks):
@@ -511,6 +554,8 @@ def review_adjustment(user, adj_id, decision, remarks):
         "WHERE id = :i", s=status, u=user["id"], r=remarks.strip(), i=adj_id)
     inv.write_audit(user["id"], decision, "stock_adjustments", adj_id,
                     old={"status": "pending"}, new={"status": status, "remarks": remarks.strip()})
+    if decision == "approve" and adj.get("source_ar_id"):
+        _resolve_ar_variances(user["id"], adj["source_ar_id"], adj["adj_no"])
     return adj["adj_no"], status
 
 
@@ -684,6 +729,30 @@ def request_void(user, issue_id, reason):
                  "void_requested_at = CURRENT_TIMESTAMP WHERE id = :i", r=reason, u=user["id"], i=issue_id)
     inv.write_audit(user["id"], "void_request", "stock_issues", issue_id, old={"status": "posted"},
                     new={"status": "void_requested", "reason": reason})
+    return issue["issue_no"]
+
+
+def can_withdraw_void(user, issue):
+    if issue["status"] != "void_requested":
+        return False, "There is no void request to withdraw."
+    if issue["void_requested_by"] != user["id"]:
+        return False, "Only the person who requested this void can withdraw it."
+    return True, ""
+
+
+def withdraw_void(user, issue_id):
+    """The requester takes the void back before it is reviewed. The sale stays posted."""
+    issue = get_issue(issue_id, None)
+    if issue is None:
+        raise InventoryError("Entry not found.")
+    ok, why = can_withdraw_void(user, issue)
+    if not ok:
+        raise InventoryError(why)
+    _b().execute("UPDATE stock_issues SET status = 'posted', void_reason = NULL, void_requested_by = NULL, "
+                 "void_requested_at = NULL WHERE id = :i", i=issue_id)
+    inv.write_audit(user["id"], "void_withdraw", "stock_issues", issue_id,
+                    old={"status": "void_requested", "reason": issue["void_reason"]},
+                    new={"status": "posted"})
     return issue["issue_no"]
 
 

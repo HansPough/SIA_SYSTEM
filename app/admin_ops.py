@@ -68,6 +68,34 @@ def get_user(user_id):
         "LEFT JOIN locations l ON l.id = u.location_id WHERE u.id = :i", i=user_id)
 
 
+def _shop_manager_waiting(location_id, user_id):
+    """Deliveries and receipts that still need this shop's manager, unless another one is active there."""
+    others = _b().one(
+        "SELECT COUNT(*) AS n FROM users u JOIN roles r ON r.id = u.role_id "
+        "WHERE u.location_id = :l AND r.code = 'shop_manager' AND u.is_active AND u.id <> :i",
+        l=location_id, i=user_id)["n"]
+    if others:
+        return []
+    out = []
+    ts = _b().all("SELECT ts_no FROM transfer_slips WHERE to_location_id = :l AND status = 'in_transit' "
+                  "ORDER BY ts_no", l=location_id)
+    if len(ts) == 1:
+        out.append("1 delivery on the way (%s)" % ts[0]["ts_no"])
+    elif ts:
+        out.append("%d deliveries on the way (%s)" % (len(ts), inv.capped_list([r["ts_no"] for r in ts])))
+    ars = _b().all(
+        "SELECT ar.ar_no FROM acknowledgment_receipts ar JOIN transfer_slips t ON t.id = ar.ts_id "
+        "WHERE t.to_location_id = :l AND NOT EXISTS (SELECT 1 FROM document_signatures ds "
+        "WHERE ds.doc_type = 'AR' AND ds.doc_id = ar.id AND ds.slot = 'received_by') ORDER BY ar.ar_no",
+        l=location_id)
+    if len(ars) == 1:
+        out.append("1 receipt waiting for a signature (%s)" % ars[0]["ar_no"])
+    elif ars:
+        out.append("%d receipts waiting for a signature (%s)"
+                   % (len(ars), inv.capped_list([r["ar_no"] for r in ars])))
+    return out
+
+
 def save_user(actor, user_id, data):
     """Create or update a user. Returns (user_id, username, created).
 
@@ -123,6 +151,16 @@ def save_user(actor, user_id, data):
             raise InventoryError("User not found.")
         if int(user_id) == int(actor["id"]) and not is_active:
             raise InventoryError("You cannot deactivate your own account.")
+        if old["role_code"] == "shop_manager" and old["is_active"]:
+            new_location_id = location["id"] if location else None
+            leaving = (not is_active or role["code"] != "shop_manager"
+                       or new_location_id != old["location_id"])
+            if leaving:
+                waiting = _shop_manager_waiting(old["location_id"], user_id)
+                if waiting:
+                    action = "deactivate" if not is_active else "remove"
+                    raise InventoryError("Cannot %s the last shop manager at %s: %s."
+                                         % (action, old["location_code"], "; ".join(waiting)))
         dup = _b().one("SELECT id FROM users WHERE LOWER(username) = :u AND id <> :i",
                        u=username.lower(), i=user_id)
         if dup:
@@ -182,6 +220,38 @@ def get_location(location_id):
     return _b().one("SELECT * FROM locations WHERE id = :i", i=location_id)
 
 
+def _location_open_documents(location_id):
+    """Open paperwork that would be stranded if this location were switched off."""
+    b, out = _b(), []
+    rf = b.all("SELECT rf_no FROM requisitions WHERE (shop_id = :i OR warehouse_id = :i) "
+               "AND status NOT IN ('closed', 'cancelled') ORDER BY rf_no", i=location_id)
+    if rf:
+        out.append("%d open RF%s (%s)" % (len(rf), "" if len(rf) == 1 else "s",
+                                          inv.capped_list([r["rf_no"] for r in rf])))
+    ts = b.all("SELECT ts_no FROM transfer_slips WHERE (from_location_id = :i OR to_location_id = :i) "
+               "AND status IN ('draft', 'assigned', 'loaded', 'in_transit') ORDER BY ts_no", i=location_id)
+    if ts:
+        out.append("%d active transfer slip%s (%s)" % (len(ts), "" if len(ts) == 1 else "s",
+                                                       inv.capped_list([r["ts_no"] for r in ts])))
+    po = b.all("SELECT po.po_no FROM purchase_orders po JOIN replenishments r ON r.id = po.ref_id "
+               "WHERE r.warehouse_id = :i AND po.status IN ('draft', 'sent', 'partially_received') "
+               "ORDER BY po.po_no", i=location_id)
+    if po:
+        out.append("%d open purchase order%s (%s)" % (len(po), "" if len(po) == 1 else "s",
+                                                     inv.capped_list([r["po_no"] for r in po])))
+    adj = b.all("SELECT adj_no FROM stock_adjustments WHERE location_id = :i AND status = 'pending' "
+                "ORDER BY adj_no", i=location_id)
+    if adj:
+        out.append("%d pending stock adjustment%s (%s)" % (len(adj), "" if len(adj) == 1 else "s",
+                                                           inv.capped_list([r["adj_no"] for r in adj])))
+    issues = b.all("SELECT issue_no FROM stock_issues WHERE location_id = :i AND status = 'void_requested' "
+                   "ORDER BY issue_no", i=location_id)
+    if issues:
+        out.append("%d void request%s waiting (%s)" % (len(issues), "" if len(issues) == 1 else "s",
+                                                        inv.capped_list([r["issue_no"] for r in issues])))
+    return out
+
+
 def save_location(actor, location_id, data):
     """Create or update a shop / warehouse. Returns (id, code, created)."""
     code = (data.get("code") or "").strip().upper()
@@ -207,6 +277,9 @@ def save_location(actor, location_id, data):
         if old is None:
             raise InventoryError("Location not found.")
         if old["is_active"] and not is_active:
+            open_docs = _location_open_documents(location_id)
+            if open_docs:
+                raise InventoryError("Cannot deactivate: %s." % "; ".join(open_docs))
             users = _b().one("SELECT COUNT(*) AS n FROM users WHERE location_id = :i AND is_active",
                              i=location_id)["n"]
             qty = _b().one("SELECT COALESCE(SUM(on_hand), 0) AS n FROM stock_balances "

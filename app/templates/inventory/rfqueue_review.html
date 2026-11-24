@@ -4,7 +4,6 @@
 {% block content %}
 <div class="page-head no-print"><h1>Review requisition</h1>{{ m.status(rf.status) }}</div>
 {% include 'print/_document_body.html' %}
-{% if can_reserve %}<p class="note">Reserve what is available now. The rest stays on backorder and goes to the restock alert.</p>{% endif %}
 <form method="post" class="card">
 {% if not can_reserve %}<details><summary>Reservation details</summary>{% else %}<h2>Stock to reserve</h2>{% endif %}
 <div class="table-wrap"><table class="data">

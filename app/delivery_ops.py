@@ -63,6 +63,18 @@ def _today():
     return dt.date.today()
 
 
+def variance_label(diffs):
+    """Variance as shown on the AR: No, or Yes with the total units short.
+
+    A line counts as a variance when what the shop received differs from what
+    the RF asked for (a short dispatch counts, not only a rejection).
+    """
+    if not any(diffs):
+        return "No"
+    total = sum(diffs)
+    return "Yes (%+d pcs)" % total if total else "Yes"
+
+
 # ---------------------------------------------------------------------
 # Drivers and vehicles
 # ---------------------------------------------------------------------
@@ -217,18 +229,28 @@ def get_transfer(ts_id, user):
         return None
     head["lines"] = _b().all(
         "SELECT ti.id AS ts_item_id, ti.rf_item_id, ti.item_id, ti.qty_released, ti.loaded, "
-        "i.item_code, i.item_name, "
-        "COALESCE(x.qty_requested, ti.qty_released) AS qty_requested, "
+        "ti.dispatch_note, i.item_code, i.item_name, "
+        "COALESCE(ti.qty_needed, x.qty_requested, ti.qty_released) AS qty_requested, "
         "(SELECT ai.qty_received FROM acknowledgment_receipt_items ai "
         " WHERE ai.ts_item_id = ti.id LIMIT 1) AS qty_received, "
         "(SELECT ai.qty_expected FROM acknowledgment_receipt_items ai "
         " WHERE ai.ts_item_id = ti.id LIMIT 1) AS qty_expected, "
         "(SELECT ai.variance_resolved_at FROM acknowledgment_receipt_items ai "
-        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_resolved_at "
+        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_resolved_at, "
+        "(SELECT ai.variance_reason FROM acknowledgment_receipt_items ai "
+        " WHERE ai.ts_item_id = ti.id LIMIT 1) AS variance_reason "
         "FROM transfer_slip_items ti JOIN items i ON i.id = ti.item_id "
         "LEFT JOIN requisition_items x ON x.id = ti.rf_item_id "
         "WHERE ti.ts_id = :t ORDER BY i.item_name", t=ts_id)
-    head["ar"] = _b().one("SELECT * FROM acknowledgment_receipts WHERE ts_id = :t", t=ts_id)
+    ar = _b().one("SELECT * FROM acknowledgment_receipts WHERE ts_id = :t", t=ts_id)
+    if ar is not None:
+        ar = dict(ar)
+        diffs = [l["qty_received"] - l["qty_requested"] for l in head["lines"]
+                 if l["qty_received"] is not None]
+        ar["variance_total"] = sum(diffs)
+        ar["has_variance"] = any(diffs)
+        ar["variance_label"] = variance_label(diffs)
+    head["ar"] = ar
     return head
 
 
@@ -242,17 +264,50 @@ def _transfer_for_write(user, ts_id):
 
 
 def reserved_transfer_lines(rf_id):
-    """The active reservation quantities that would go on the next transfer."""
-    return _b().all(
-        "SELECT x.id AS rf_item_id, x.item_id, i.item_code, i.item_name, SUM(rs.qty) AS qty "
+    """The active reservation quantities that would go on the next transfer.
+
+    still_needed is what the RF line has left once earlier deliveries are counted
+    (a backorder line needs only its remainder). short is how much of that this
+    transfer leaves behind, and is what needs a reason.
+    """
+    lines = _b().all(
+        "SELECT x.id AS rf_item_id, x.item_id, x.qty_requested, x.qty_delivered, "
+        "i.item_code, i.item_name, SUM(rs.qty) AS qty "
         "FROM requisition_items x JOIN items i ON i.id = x.item_id "
         "JOIN reservations rs ON rs.rf_item_id = x.id AND rs.status = 'reserved' "
-        "WHERE x.rf_id = :r GROUP BY x.id, x.item_id, i.item_code, i.item_name "
-        "HAVING SUM(rs.qty) > 0 ORDER BY x.id", r=rf_id)
+        "WHERE x.rf_id = :r GROUP BY x.id, x.item_id, x.qty_requested, x.qty_delivered, "
+        "i.item_code, i.item_name HAVING SUM(rs.qty) > 0 ORDER BY x.id", r=rf_id)
+    for line in lines:
+        line["still_needed"] = max(0, line["qty_requested"] - line["qty_delivered"])
+        line["short"] = max(0, line["still_needed"] - line["qty"])
+    return lines
 
 
-def create_transfer(user, rf_id):
-    """Prepare a draft TS from the stock that is currently reserved for an RF. Returns (ts_id, ts_no)."""
+def _dispatch_notes(lines, notes):
+    """The per-line short-dispatch reason, validated. notes: rf_item_id -> text."""
+    by_rf = {}
+    for key, value in (notes or {}).items():
+        try:
+            by_rf[int(str(key).strip())] = (value or "").strip()
+        except (TypeError, ValueError):
+            continue                        # a line that is not in this RF
+    out = {}
+    for line in lines:
+        note = by_rf.get(line["rf_item_id"], "")
+        if len(note) > 200:
+            raise InventoryError("%s: the reason can be at most 200 characters." % line["item_name"])
+        if line["short"] and not note:
+            raise InventoryError("%s: only %d of %d is being sent. Say why."
+                                 % (line["item_name"], line["qty"], line["still_needed"]))
+        out[line["rf_item_id"]] = note or None
+    return out
+
+
+def create_transfer(user, rf_id, notes=None):
+    """Prepare a draft TS from the stock that is currently reserved for an RF. Returns (ts_id, ts_no).
+
+    notes: rf_item_id -> why that line is being sent short. Required on a short line.
+    """
     if user["role"] != "warehouse_manager":
         raise InventoryError("Only the warehouse manager can prepare a transfer slip.")
     rf = _b().one("SELECT r.*, s.code AS shop FROM requisitions r JOIN locations s ON s.id = r.shop_id "
@@ -269,6 +324,7 @@ def create_transfer(user, rf_id):
     lines = reserved_transfer_lines(rf_id)
     if not lines:
         raise InventoryError("Nothing is reserved for this RF yet. Reserve stock in the RF queue first.")
+    dispatch_notes = _dispatch_notes(lines, notes)
     ts_no = inv.next_doc_no("TS")
     row = _b().one(
         "INSERT INTO transfer_slips (ts_no, rf_id, from_location_id, to_location_id, status, prepared_by) "
@@ -276,9 +332,11 @@ def create_transfer(user, rf_id):
         no=ts_no, rf=rf_id, f=rf["warehouse_id"], t=rf["shop_id"], u=user["id"])
     ts_id = row["id"]
     for line in lines:
-        _b().execute("INSERT INTO transfer_slip_items (ts_id, rf_item_id, item_id, qty_released) "
-                     "VALUES (:t, :ri, :i, :q)", t=ts_id, ri=line["rf_item_id"],
-                     i=line["item_id"], q=line["qty"])
+        _b().execute("INSERT INTO transfer_slip_items (ts_id, rf_item_id, item_id, qty_released, "
+                     "qty_needed, dispatch_note) "
+                     "VALUES (:t, :ri, :i, :q, :need, :n)", t=ts_id, ri=line["rf_item_id"],
+                     i=line["item_id"], q=line["qty"], need=line["still_needed"],
+                     n=dispatch_notes[line["rf_item_id"]])
     inv.write_audit(user["id"], "create", "transfer_slips", ts_id,
                     new={"ts_no": ts_no, "rf_no": rf["rf_no"], "shop": rf["shop"],
                          "items": [[l["item_id"], l["qty"]] for l in lines]})
@@ -427,11 +485,11 @@ def list_shop_variances(user, status="", page=1):
            "JOIN items i ON i.id = ari.item_id "
            "JOIN locations s ON s.id = t.to_location_id "
            "WHERE ari.qty_received < ari.qty_expected" + where)
-    cols = ("SELECT ari.id, ar.id AS ar_id, t.id AS ts_id, ar.ar_no, t.ts_no, r.rf_no, s.code AS shop, "
-            "i.item_code, i.item_name, "
+    cols = ("SELECT ari.id, ar.id AS ar_id, t.id AS ts_id, ar.ar_no, t.ts_no, r.rf_no, "
+            "s.code AS shop, i.item_code, i.item_name, "
             "ari.qty_expected, ari.qty_received, "
             "ari.qty_expected - ari.qty_received AS qty_rejected, ari.variance_reason, "
-            "ari.variance_resolved_at, ar.received_at ")
+            "ari.variance_resolved_at ")
     res = _paged("SELECT COUNT(*) AS n " + frm,
                  cols + frm + " ORDER BY CASE WHEN ari.variance_resolved_at IS NULL THEN 0 ELSE 1 END, "
                  "ar.id DESC, i.item_name", page, **p)
@@ -540,7 +598,9 @@ def receive_delivery(user, ts_id, received_date, remarks, pairs, counted=None):
     missing = [i for i in by_ts if i not in got]
     if missing:
         raise InventoryError("Enter the accepted/rejected quantity for every line.")
-    has_variance = any(g["rejected"] > 0 for g in got.values())
+    # A short dispatch is a variance too: the shop received less than the RF asked for.
+    has_variance = any(g["accepted"] != by_ts[tid]["qty_requested"] or g["rejected"] > 0
+                       for tid, g in got.items())
 
     ar_no = inv.next_doc_no("AR")
     row = _b().one(

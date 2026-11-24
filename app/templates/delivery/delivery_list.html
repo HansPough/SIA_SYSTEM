@@ -22,6 +22,7 @@
 <td>{{ m.status(r.status) }}</td>
 <td>{% if r.n_variance %}{{ m.status('open', label='Open (' ~ r.n_open_variance ~ ')') if r.n_open_variance else m.status('resolved') }}{% else %}–{% endif %}</td>
 <td>{% if r.status == 'in_transit' %}<a class="btn small primary" href="{{ url_for('delivery.delivery_receive', ts_id=r.id) }}">Receive</a>
+<a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.id) }}">Open</a>
 {% else %}{% if r.ar_id %}<a class="btn small primary" href="{{ url_for('documents.view', doc_type='AR', doc_id=r.ar_id) }}">AR</a>{% endif %}
 <a class="btn small" href="{{ url_for('delivery.transfer_detail', ts_id=r.id) }}">Open</a>{% endif %}</td></tr>
 {% else %}

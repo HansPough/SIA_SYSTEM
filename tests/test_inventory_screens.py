@@ -218,6 +218,37 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(self.bal(TIRE_A, 2), 10)
         self.assertEqual(self.be.one("SELECT status FROM stock_adjustments")["status"], "rejected")
 
+    def test_the_creator_can_cancel_a_pending_adjustment(self):
+        adj = self.raise_adjustment("whstaff")
+        self.login("whstaff")
+        page = self.c.get("/inventory/adjustments/%d" % adj).get_data(as_text=True)
+        self.assertIn('class="btn danger">Cancel adjustment</button>', page)
+        self.assertIn("return confirm('Cancel this adjustment?", page)
+        r = self.c.post("/inventory/adjustments/%d/cancel" % adj)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM stock_adjustments")["n"], 0)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM stock_adjustment_items")["n"], 0)
+        self.assertEqual(self.bal(TIRE_A, 1), 10)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'cancel'")["n"], 1)
+        self.assertIn("cancelled", " ".join(self.flashes(self.c.get(r.headers["Location"]))))
+
+    def test_only_the_creator_cancels_and_not_after_review(self):
+        adj = self.raise_adjustment("whstaff")
+        self.login("whmgr")
+        self.assertIn("Review and decide", self.c.get("/inventory/adjustments/%d" % adj).get_data(as_text=True))
+        self.assertNotIn("Cancel adjustment", self.c.get("/inventory/adjustments/%d" % adj).get_data(as_text=True))
+        self.login("shopstaff")
+        r = self.c.post("/inventory/adjustments/%d/cancel" % adj)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("Only the person who raised", self.c.get(r.headers["Location"]).get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT status FROM stock_adjustments")["status"], "pending")
+        self.login("whmgr")
+        self.c.post("/inventory/adjustments/%d/review" % adj, data={"decision": "approve", "review_remarks": "Counted"})
+        self.login("whstaff")
+        r = self.c.post("/inventory/adjustments/%d/cancel" % adj)
+        self.assertIn("already approved", self.c.get(r.headers["Location"]).get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM stock_adjustments")["n"], 1)
+
     def test_a_manager_stock_count_is_applied_at_once(self):
         self.login("shopmgr")
         r = self.c.post("/inventory/count", data={

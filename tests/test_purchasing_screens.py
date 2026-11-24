@@ -1,6 +1,7 @@
 """Click-through tests for Module 3 (Purchasing): alerts, REF, RFQ, quotations, approvals,
 purchase orders and suppliers. Uses the same in-memory SQLite copy as the other tests.
 """
+import datetime as dt
 import os
 import re
 import sys
@@ -212,6 +213,18 @@ class ReplenishmentFormTests(Base):
         left = self.be.all("SELECT item_id FROM notification_items WHERE notification_id = 1")
         self.assertEqual([r["item_id"] for r in left], [B])
 
+    def test_ref_progress_is_one_items_table_not_boxes(self):
+        self.make_ref()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/1").get_data(as_text=True)
+        progress = page[page.index("<h2>Progress</h2>"):page.index("<h2>RFQs and quotations</h2>")]
+        self.assertIn('<table class="data">', progress)
+        for heading in ("Item", "Requested", "Still open", "Ordered", "Received", "Dropped", "For RF"):
+            self.assertIn(">%s<" % heading, progress)
+        self.assertIn("TIR-0001", progress)
+        self.assertIn('name="reason"', progress)                    # Give up sits in the row
+        self.assertNotIn('class="side-item"', page)
+
     def test_shortage_line_links_the_waiting_rf(self):
         self.make_ref(item=B, qty=4, reason="shortage")
         line = self.be.one("SELECT * FROM replenishment_items")
@@ -299,6 +312,45 @@ class RfqQuotationTests(Base):
         # for A explicitly fills its agreed price for item A into the form.
         html = self.c.get("/purchasing/ref/%d/quotation/new?supplier_id=%d" % (ref_id, SUP_A)).get_data(as_text=True)
         self.assertRegex(html, r'name="unit_price\[\]"[^>]*value="10\.00"')
+        # the filled price is labelled, so it is not mistaken for the supplier's own reply
+        self.assertIn("data-from-agreed", html)
+        self.assertIn("agreed price", html)
+        # a saved reply is shown as the supplier's own answer, without the label
+        self.quote(ref_id, supplier=SUP_A, lines=[(A, 5, "11.00", 2)])
+        html = self.c.get("/purchasing/ref/%d/quotation/new?supplier_id=%d" % (ref_id, SUP_A)).get_data(as_text=True)
+        self.assertIn('value="11.00"', html)
+        self.assertNotIn("data-from-agreed", html)
+
+    def test_a_later_round_loads_the_last_reply_and_replaces_its_price(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, lines=[(A, 5, "12.00", 7)])
+        first_q = self.be.one("SELECT id FROM quotations")["id"]
+        self.send_rfq(ref_id, suppliers=(SUP_A,))                 # round 2 for the still-open item
+        round2 = self.be.one("SELECT rfq_no FROM rfqs ORDER BY id DESC LIMIT 1")["rfq_no"]
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/quotation/new?supplier_id=%d"
+                          % (ref_id, SUP_A)).get_data(as_text=True)
+        self.assertIn('value="12.00"', page)                      # the round-1 reply is loaded
+        self.assertIn("Loaded this supplier's last reply on", page)
+        self.assertIn(round2, page)
+        # re-quoting the item supersedes the older line and its price
+        self.quote(ref_id, lines=[(A, 5, "9.50", 3)])
+        second_q = self.be.one("SELECT id FROM quotations ORDER BY id DESC LIMIT 1")["id"]
+        self.assertNotEqual(first_q, second_q)
+        old = self.be.one("SELECT superseded_at FROM quotation_items WHERE quotation_id = :q", q=first_q)
+        new = self.be.one("SELECT superseded_at FROM quotation_items WHERE quotation_id = :q", q=second_q)
+        self.assertIsNotNone(old["superseded_at"])
+        self.assertIsNone(new["superseded_at"])
+        self.assertAlmostEqual(float(self.be.one("SELECT total_amount FROM quotations WHERE id = :q",
+                                                 q=first_q)["total_amount"]), 0.0, places=2)
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("replaced by a later quotation", page)
+        self.login("whmgr")
+        compare = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("9.50", compare)
+        self.assertNotIn("12.00", compare)
 
     def test_quotation_reloads_a_saved_reply(self):
         self.make_ref()
@@ -335,6 +387,60 @@ class RfqQuotationTests(Base):
             self.assertIn("set its quantity to 0", " ".join(self.flashes(r)), bad)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM quotations")["n"], 0)
 
+    def test_an_expired_quotation_falls_back_to_the_agreed_price(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, lines=[(A, 5, "12.00", 7)], valid_until="2026-11-02")
+        self.be.execute("UPDATE quotations SET valid_until = '2020-01-01'")
+        self.be.commit()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        qid = self.be.one("SELECT id FROM quotations")["id"]
+        self.assertNotIn('value="q:%d"' % qid, page)         # expired: replaced by the agreed price
+        self.assertIn('value="a:%d"' % SUP_A, page)
+        self.assertIn("10.00", page)
+        self.assertIn("Sup A (agreed price)", page)          # the summary keeps the tag
+        r = self.compare_agreed(ref_id)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.be.one("SELECT basis FROM purchase_approvals")["basis"], "agreed_price")
+
+    def test_choose_suppliers_puts_one_offer_per_supplier_and_the_qty_in_the_row(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id)
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        rid = self.line_ids(ref_id)[A]
+        qid = self.be.one("SELECT id FROM quotations")["id"]
+        self.assertNotIn("One offer for every item", page)
+        self.assertNotIn('id="bulk-offer"', page)
+        self.assertNotIn('value="a:%d"' % SUP_A, page)       # quoted it: no second agreed-price radio
+        self.assertEqual(page.count('value="q:%d"' % qid), 1)
+        self.assertIn('name="qty_%d"' % rid, page)
+        self.assertIn('value="5"', page)                     # prefilled with the 5 still to order
+        self.assertIn("50.00", page)                         # 5 x 10.00 line subtotal
+        self.assertIn("1 item &middot; 50.00", page)         # split preview shows the PO total
+        self.assertNotIn(">Record quotation</a>", page)      # the extra button is gone
+        self.assertIn(">Send for approval</button>", page)
+        self.assertIn(">Back</a>", page)
+
+    def test_the_ref_page_puts_the_next_steps_in_the_header_and_renames_drop(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id)
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        head = page[page.index('<div class="page-head no-print">'):page.index("<h2>Progress</h2>")]
+        for label in ("Record quotation", "Choose suppliers", "Ask more suppliers"):
+            self.assertIn(">%s</a>" % label, head)
+        self.assertIn('placeholder="Reason to drop..."', page)
+        self.assertIn(">Drop</button>", page)
+        self.assertNotIn("why give up", page)
+        self.assertNotIn(">Give up</button>", page)
+
 
 class ApprovalTests(Base):
     def full_quote_ref(self):
@@ -369,6 +475,19 @@ class ApprovalTests(Base):
         self.assertIn(">Send</a>", po_list)
         ref = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
         self.assertIn("Send PO", ref)
+
+    def test_expected_delivery_defaults_to_quotation_date_plus_lead_time(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        quotation_date = dt.date.today() - dt.timedelta(days=2)
+        self.quote(ref_id, quotation_date=quotation_date.isoformat(), lines=[(A, 5, "10.00", 7)])
+        self.compare_quote(ref_id)
+        self.login("owner")
+        page = self.c.get("/purchasing/approvals/%d" % self.approval_id()).get_data(as_text=True)
+        expected = (quotation_date + dt.timedelta(days=7)).isoformat()
+        self.assertRegex(page, r'name="expected_date"[^>]*value="%s"' % expected)
+        self.assertIn("from quotation date + lead time", page)
 
     def test_choose_a_quotation_sends_it_to_the_owner(self):
         ref_id = self.full_quote_ref()
@@ -469,9 +588,9 @@ class ApprovalTests(Base):
         self.make_ref()
         ref_id = self.ref_id()
         self.send_rfq(ref_id)
-        self.quote(ref_id, lines=[(A, 5, "10.00", 7)],
+        self.quote(ref_id, supplier=SUP_B, lines=[(A, 5, "10.00", 7)],
                    quotation_date="2026-01-01", valid_until="2026-01-02")
-        r = self.compare_quote(ref_id)
+        r = self.compare_quote(ref_id, supplier=SUP_B)   # no agreed price to fall back to
         self.assertEqual(r.status_code, 200)
         self.assertIn("expired", " ".join(self.flashes(r)))
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
@@ -541,6 +660,47 @@ class ApprovalTests(Base):
         self.approve()
         actions = {r["action"] for r in self.be.all("SELECT action FROM audit_log")}
         self.assertTrue({"create", "submit", "approve"} <= actions)
+
+    def test_the_manager_can_withdraw_a_pending_approval(self):
+        ref_id = self.full_quote_ref()
+        self.compare_quote(ref_id)
+        aid = self.approval_id()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn('class="btn small danger">Withdraw</button>', page)
+        self.assertIn("return confirm('Withdraw this approval?", page)
+        self.assertNotIn(">decide</a>", page)                  # the owner decides, not the manager
+        r = self.c.post("/purchasing/approvals/%d/withdraw" % aid)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approval_items")["n"], 0)
+        self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "rfq_sent")
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'withdraw'")["n"], 1)
+        page = self.c.get(r.headers["Location"]).get_data(as_text=True)
+        self.assertIn("withdrawn", page)
+        self.assertNotIn("Withdraw", page)
+        # the lines are open again, so a supplier can be chosen once more
+        self.assertEqual(self.compare_quote(ref_id).status_code, 302)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 1)
+
+    def test_only_the_submitting_manager_and_only_while_pending(self):
+        ref_id = self.full_quote_ref()
+        self.compare_quote(ref_id)
+        aid = self.approval_id()
+        self.be.execute("INSERT INTO users (username, full_name, role_id, location_id) VALUES "
+                        "('whmgr2', 'Second WM', (SELECT id FROM roles WHERE code = 'warehouse_manager'), 1)")
+        self.be.commit()
+        self.c.get("/dev/user/%d" % self.be.one("SELECT id FROM users WHERE username = 'whmgr2'")["id"])
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertNotIn("Withdraw", page)                      # not the one who submitted it
+        self.c.post("/purchasing/approvals/%d/withdraw" % aid)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 1)
+        self.approve()
+        self.login("whmgr")
+        r = self.c.post("/purchasing/approvals/%d/withdraw" % aid)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("already approved", self.c.get(r.headers["Location"]).get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT decision FROM purchase_approvals")["decision"], "approved")
 
 
 class SupplierTests(Base):
@@ -677,6 +837,33 @@ class SplitOrderingTests(Base):
         self.assertEqual(sigs.count(("REF", "approved_by")), 1)
         self.assertEqual(sigs.count(("PO", "approved_by")), 2)
 
+    def test_one_supplier_mixing_quotation_and_agreed_price_gets_one_approval_and_po(self):
+        ref_id = self.two_item_ref()
+        self.quote(ref_id, SUP_A, lines=[(B, 10, "18.00", 5)])       # Sup A quotes B only
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("Sup A (quotation + agreed price)", page)      # one preview group
+        ids = self.line_ids(ref_id)
+        self.choose(ref_id, **{str(A): "a:%d" % SUP_A, str(B): "q:%d" % self.qid(SUP_A)})
+        approvals = self.be.all("SELECT * FROM purchase_approvals")
+        self.assertEqual(len(approvals), 1)                          # one supplier, one approval
+        self.assertEqual((approvals[0]["supplier_id"], approvals[0]["basis"], approvals[0]["quotation_id"]),
+                         (SUP_A, "mixed", None))
+        lines = {r["replenishment_item_id"]: r for r in self.be.all("SELECT * FROM purchase_approval_items")}
+        self.assertEqual(len(lines), 2)
+        self.assertAlmostEqual(float(lines[ids[A]]["unit_price"]), 10.0, places=2)   # agreed price
+        self.assertAlmostEqual(float(lines[ids[B]]["unit_price"]), 18.0, places=2)   # quotation
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("Mixed", page)                                 # the REF says why
+        self.owner_decides()
+        pos = self.be.all("SELECT * FROM purchase_orders")
+        self.assertEqual(len(pos), 1)                                # one supplier, one PO
+        self.assertEqual(pos[0]["supplier_id"], SUP_A)
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_order_items WHERE po_id = :p",
+                                     p=pos[0]["id"])["n"], 2)
+        self.assertAlmostEqual(float(pos[0]["total_amount"]), 20 * 10.0 + 10 * 18.0, places=2)
+
     def test_a_stored_zero_price_is_not_an_offer(self):
         """Old data with a 0 price must not become the 'cheapest' preselected supplier."""
         ref_id = self.two_item_ref()
@@ -692,6 +879,15 @@ class SplitOrderingTests(Base):
         r = self.choose(ref_id, **{str(B): "q:%d" % self.qid(SUP_A), str(A): "q:%d" % self.qid(SUP_B)})
         self.assertIn("did not offer this item", r.get_data(as_text=True))
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM purchase_approvals")["n"], 0)
+
+    def test_a_supplier_who_quoted_one_item_is_not_offered_twice_for_it(self):
+        ref_id = self.two_item_ref()
+        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertEqual(page.count('value="q:%d"' % self.qid(SUP_A)), 1)   # B: the quotation
+        self.assertIn('value="a:1"', page)                                  # A: agreed price, nobody quoted it
+        self.assertIn("Sup A (quotation + agreed price)", page)             # one preview group, mixed base
 
     def test_default_picks_the_cheapest_supplier_that_can_cover_the_whole_quantity(self):
         ref_id = self.two_item_ref()
@@ -1009,6 +1205,12 @@ class MoreSuppliersTests(Base):
         self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])
         second_q = self.qid(SUP_A)
         self.assertNotEqual(first_q, second_q)
+        # item B was not re-quoted, so the round-1 line stays valid
+        old = self.be.all("SELECT replenishment_item_id, superseded_at FROM quotation_items WHERE quotation_id = :q",
+                          q=first_q)
+        self.assertEqual([r["replenishment_item_id"] for r in old],
+                         [self.line_ids(ref_id)[B]])
+        self.assertIsNone(old[0]["superseded_at"])
         self.choose(ref_id, **{str(A): "q:%d" % second_q, str(B): "q:%d" % first_q})
         approvals = self.be.all("SELECT * FROM purchase_approvals")
         self.assertEqual(len(approvals), 1)                                    # one supplier, one approval

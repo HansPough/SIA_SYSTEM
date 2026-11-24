@@ -50,7 +50,7 @@ CREATE TABLE transfer_slips (id INTEGER PRIMARY KEY AUTOINCREMENT, ts_no TEXT UN
   loaded_by INTEGER, released_by INTEGER, released_at TEXT, delivered_at TEXT, remarks TEXT, driver_paper_reason TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE transfer_slip_items (id INTEGER PRIMARY KEY AUTOINCREMENT, ts_id INTEGER, rf_item_id INTEGER, item_id INTEGER,
-  qty_released INTEGER CHECK (qty_released > 0), loaded INTEGER NOT NULL DEFAULT 0, UNIQUE (ts_id, rf_item_id));
+  qty_released INTEGER CHECK (qty_released > 0), qty_needed INTEGER, dispatch_note TEXT, loaded INTEGER NOT NULL DEFAULT 0, UNIQUE (ts_id, rf_item_id));
 CREATE TABLE drivers (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT, contact_no TEXT, license_no TEXT, is_active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, plate_no TEXT UNIQUE, vehicle_type TEXT, is_active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE acknowledgment_receipts (id INTEGER PRIMARY KEY AUTOINCREMENT, ar_no TEXT UNIQUE, ts_id INTEGER UNIQUE, received_by INTEGER,
@@ -86,7 +86,7 @@ CREATE TABLE quotations (id INTEGER PRIMARY KEY AUTOINCREMENT, rfq_id INTEGER, s
   quotation_date TEXT, valid_until TEXT, total_amount REAL, notes TEXT, recorded_by INTEGER,
   recorded_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE (rfq_id, supplier_id));
 CREATE TABLE quotation_items (id INTEGER PRIMARY KEY AUTOINCREMENT, quotation_id INTEGER, replenishment_item_id INTEGER,
-  item_id INTEGER, qty_offered INTEGER, unit_price REAL, lead_time_days INTEGER,
+  item_id INTEGER, qty_offered INTEGER, unit_price REAL, lead_time_days INTEGER, superseded_at TEXT,
   UNIQUE (quotation_id, replenishment_item_id));
 CREATE TABLE purchase_approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, supplier_id INTEGER, basis TEXT,
   quotation_id INTEGER, decision TEXT DEFAULT 'pending', submitted_by INTEGER, submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,

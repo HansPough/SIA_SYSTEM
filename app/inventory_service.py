@@ -309,6 +309,14 @@ def peek_doc_no(doc_type, year=None):
     return "%s-%d-%04d" % (doc_type, year, (row["last_no"] if row else 0) + 1)
 
 
+def capped_list(values, limit=5):
+    """The first few names, then '…and N more', so a guard message stays readable."""
+    values = list(values)
+    shown = ", ".join(values[:limit])
+    rest = len(values) - limit
+    return shown + (" …and %d more" % rest if rest > 0 else "")
+
+
 def write_audit(user_id, action, table_name, record_id=None, old=None, new=None, ip=None):
     """One audit_log row. old / new are dicts (or None)."""
     _backend.execute(

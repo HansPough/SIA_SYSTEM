@@ -3,7 +3,6 @@
 {% block title %}New location{% endblock %}
 {% block content %}
 <div class="page-head"><h1>New location</h1></div>
-<p class="note">Add the location before its staff.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Code', 'code', 'text', value=f.get('code', ''), required=True, help='short code, e.g. WH or SHOP2') }}

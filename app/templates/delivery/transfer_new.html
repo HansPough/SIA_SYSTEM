@@ -4,14 +4,24 @@
 <div class="page-head"><h1>New transfer</h1></div>
 {% if not drivers or not vehicles %}<p class="note">Add a <a href="{{ url_for('delivery.driver_list') }}">driver</a> and <a href="{{ url_for('delivery.vehicle_list') }}">vehicle</a> first.</p>{% endif %}
 {% if selected %}
+{% set note_vals = f.getlist('dispatch_note[]') %}
 <div class="card">
   <h2>Reserved for {{ selected.rf_no }} · {{ selected.shop }}</h2>
-  <div class="table-wrap"><table class="data">
-    <thead><tr><th>Item</th><th class="num">Quantity to transfer</th></tr></thead>
-    <tbody>{% for line in reserved_lines %}<tr><td>{{ line.item_name }}<small>{{ line.item_code }}</small></td><td class="num">{{ line.qty }}</td></tr>{% endfor %}</tbody>
-  </table></div>
   <form method="post">
-    <input type="hidden" name="rf_id" value="{{ selected.id }}">
+  <input type="hidden" name="rf_id" value="{{ selected.id }}">
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Item</th><th class="num">Still needed</th><th class="num">On TS</th><th class="num">Short by</th><th>Reason</th></tr></thead>
+    <tbody>{% for line in reserved_lines %}
+    <tr><td>{{ line.item_name }}<small>{{ line.item_code }}</small>
+      <input type="hidden" name="rf_item_id[]" value="{{ line.rf_item_id }}"></td>
+    <td class="num">{{ line.still_needed }}</td><td class="num">{{ line.qty }}</td>
+    <td class="num">{{ line.short or '–' }}</td>
+    <td>{% if line.short %}<input type="text" name="dispatch_note[]" maxlength="200" required
+              value="{{ note_vals[loop.index0] if note_vals|length > loop.index0 else '' }}"
+              placeholder="why the rest is not going">
+        {% else %}<input type="hidden" name="dispatch_note[]" value=""><span class="muted">–</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
     <div class="grid">
       <div class="field"><label for="ts_no">TS no.</label><input type="text" id="ts_no" value="{{ next_no }}" readonly></div>
       <div class="field"><label for="driver_id">Driver</label><select id="driver_id" name="driver_id" required><option value="">Choose a driver</option>

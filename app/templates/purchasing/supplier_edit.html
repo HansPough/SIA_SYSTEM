@@ -6,7 +6,6 @@
   <span class="badge s-info">{{ 'Regular' if supplier.is_regular else 'Supplier' }}</span>
   {% if not supplier.is_active %}{{ m.status('inactive') }}{% endif %}
 </div>
-<p class="note">Agreed prices are for regular suppliers (no RFQ).</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Supplier name', 'supplier_name', 'text',

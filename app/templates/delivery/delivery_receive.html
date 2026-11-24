@@ -6,29 +6,18 @@
 {% set rejected_vals = f.getlist('qty_rejected[]') %}
 {% set reason_vals = f.getlist('variance_reason[]') %}
 <div class="page-head"><h1>Receive delivery</h1>{{ m.status('in_transit', label='In transit') }}</div>
-<div class="card">
-  <h2 style="margin-top:0">1. Check the TS</h2>
-  <dl class="info">
-    <div><dt>TS no.</dt><dd>{{ ts.ts_no }}</dd></div>
-    <div><dt>Released by</dt><dd>{% if released_sig %}{{ released_sig.signer_name }} &middot; {{ (released_sig.signed_at|string)[:16] }}{% else %}–{% endif %}</dd></div>
-    <div><dt>Driver</dt><dd>{{ ts.driver_name or '–' }}{% if driver_sig %} {{ m.status('signed') }}{% elif ts.driver_paper_reason %} <span class="badge s-warn">paper: {{ ts.driver_paper_reason }}</span>{% endif %}</dd></div>
-    <div><dt>Vehicle</dt><dd>{{ ts.vehicle_plate or '–' }}</dd></div>
-  </dl>
-  <p class="note" style="margin-bottom:0">Count each line and tick <strong>Counted</strong>. Enter anything rejected or short.</p>
-</div>
-<p class="note">Accepted + rejected = qty on the TS.</p>
+
+{% set d = load_document('TS', ts.id) %}
+{% if d %}{% include 'print/_document_body.html' %}{% endif %}
+{% if ar_doc %}{% set d = ar_doc %}{% include 'print/_document_body.html' %}{% endif %}
+
 <form method="post" class="card">
 <div class="grid">
-  {{ m.field('AR no.', 'ar_no', 'text', value=next_no, readonly=True) }}
-  {{ m.field('TS no.', 'ts_no', 'text', value=ts.ts_no, readonly=True) }}
-  {{ m.field('From', 'from_location', 'text', value=ts.from_code, readonly=True) }}
-  {{ m.field('Driver / vehicle', 'driver_vehicle', 'text',
-             value=(ts.driver_name or '–') ~ ' / ' ~ (ts.vehicle_plate or '–'), readonly=True) }}
   {{ m.field('Date received', 'received_date', 'date', value=f.get('received_date', ''), required=True) }}
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2) }}
 </div>
 
-<h2>2. Count the items</h2>
+<h2>Count the items</h2>
 <div class="table-wrap"><table class="data">
 <thead><tr><th class="check-cell">Counted</th><th>Item</th><th class="num">Qty on TS</th><th>Accepted</th><th>Rejected</th><th>Variance reason (if rejected/short)</th></tr></thead>
 <tbody>
@@ -50,7 +39,7 @@
 </tbody>
 </table></div>
 
-<h2>3. Sign</h2>
+<h2>Sign</h2>
 {{ m.signing_box('Signs the receipt and the TS, and adds accepted units to shop stock.') }}
 <div class="actions">
   <button type="submit" name="action" value="sign_ar" class="btn primary">Sign &amp; confirm receipt</button>

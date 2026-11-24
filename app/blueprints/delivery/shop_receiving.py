@@ -4,7 +4,6 @@ from ...roles import roles_required
 from ... import delivery_ops as dop
 from ... import inventory_service as inv
 from ... import document_ops as docs
-from ... import signing
 from ...inventory_service import InventoryError
 from ...session_user import current_user
 from . import bp
@@ -68,8 +67,6 @@ def delivery_receive(ts_id):
                 msg += " %d variance(s) resolved." % resolved
             flash(msg, "success")
             return redirect(url_for("delivery.transfer_detail", ts_id=ts_id))
-    sigs = signing.signatures_for("TS", ts_id)
     return render_template("delivery/delivery_receive.html", ts=ts, f=request.form,
-                           released_sig=sigs.get("released_by"), driver_sig=docs.driver_signature(ts),
                            counted_ids=request.form.getlist("counted[]"),
-                           next_no=inv.peek_doc_no("AR"))
+                           ar_doc=docs.draft_ar(ts_id, user))

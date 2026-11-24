@@ -63,10 +63,26 @@ def _styles():
     s["right"] = ParagraphStyle("right", parent=base, alignment=TA_RIGHT)
     s["right_b"] = ParagraphStyle("right_b", parent=base, alignment=TA_RIGHT, fontName="Helvetica-Bold")
     s["cell"] = ParagraphStyle("cell", parent=base, fontSize=8.5, leading=10.5)
+    s["numhead"] = ParagraphStyle("numhead", parent=base, fontSize=8, leading=10, alignment=TA_RIGHT,
+                                  fontName="Helvetica-Bold")
     s["name"] = ParagraphStyle("name", parent=base, fontName="Helvetica-Bold", fontSize=10, leading=12)
     s["warn"] = ParagraphStyle("warn", parent=base, fontSize=7.5, leading=9.5, textColor=WARN,
                                fontName="Helvetica-Bold")
+    s["short"] = ParagraphStyle("short", parent=base, alignment=TA_RIGHT, textColor=WARN,
+                                fontName="Helvetica-Bold")
+    s["zero"] = ParagraphStyle("zero", parent=base, alignment=TA_RIGHT, textColor=MUTED)
     return s
+
+
+def _diff_cell(value, st, bold=False):
+    """Diff column: negative (short) in bold red, zero muted, otherwise plain."""
+    if value is None:
+        return Paragraph("–", st["right"])
+    if value < 0:
+        return Paragraph(str(value), st["short"])
+    if value == 0:
+        return Paragraph("0", st["zero"])
+    return Paragraph(str(value), st["right_b"] if bold else st["right"])
 
 
 def _signature_image(data_url, max_w, max_h):
@@ -138,7 +154,49 @@ def _parties_and_meta(doc, st):
     return out
 
 
+def _qty_items_table(doc, st):
+    """Items with a quantity breakdown (TS, AR): requested/received, diff, remarks, totals."""
+    cols = doc["qty_columns"]
+    head = [Paragraph("<b>Code</b>", st["cell"]), Paragraph("<b>Item</b>", st["cell"])]
+    head += [Paragraph("<b>%s</b>" % label, st["numhead"]) for _, label in cols]
+    head += [Paragraph("<b>Diff</b>", st["numhead"]), Paragraph("<b>Remarks</b>", st["cell"])]
+    rows = [head]
+    for it in doc["lines"]:
+        row = [Paragraph(_t(it.get("code")), st["cell"]), Paragraph(_t(it.get("name")), st["cell"])]
+        for key, _ in cols:
+            value = it.get(key)
+            row.append(Paragraph("–" if value is None else str(value), st["right"]))
+        row.append(_diff_cell(it.get("diff"), st))
+        row.append(Paragraph(_t(it.get("note") or "–"), st["cell"]))
+        rows.append(row)
+    if not doc["lines"]:
+        rows.append([Paragraph("No items.", st["small"])] + [""] * (len(head) - 1))
+    totals = doc.get("qty_totals") or {}
+    show_totals = bool(totals) and bool(doc["lines"])
+    if show_totals:
+        row = ["", Paragraph("<b>Total</b>", st["right_b"])]
+        for key, _ in cols:
+            value = totals.get(key)
+            row.append(Paragraph("<b>%s</b>" % ("–" if value is None else value), st["right_b"]))
+        row.append(_diff_cell(totals.get("diff"), st, bold=True))
+        row.append("")
+        rows.append(row)
+    widths = [22 * mm, 0] + [21 * mm] * len(cols) + [13 * mm, 34 * mm]
+    widths[1] = CONTENT_W - sum(widths)
+    t = Table(rows, colWidths=widths, repeatRows=1)
+    style = [("BACKGROUND", (0, 0), (-1, 0), SOFT), ("LINEBELOW", (0, 0), (-1, 0), 0.8, INK),
+             ("LINEBELOW", (0, 1), (-1, -1), 0.4, LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+             ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]
+    if show_totals:
+        style += [("LINEABOVE", (0, -1), (-1, -1), 1.0, INK),
+                  ("BACKGROUND", (0, -1), (-1, -1), SOFT)]
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def _items_table(doc, st):
+    if doc.get("qty_columns"):
+        return _qty_items_table(doc, st)
     prices = doc["show_prices"]
     head = ["Code", "Item", "Qty"] + (["Unit price", "Amount"] if prices else []) + ["Note"]
     rows = [[Paragraph("<b>%s</b>" % h, st["cell"]) for h in head]]
@@ -232,8 +290,10 @@ def build_pdf(doc, company="3T Tire Supply"):
     story += _parties_and_meta(doc, st)
     story += [Paragraph("Items", st["h2"]), _items_table(doc, st)]
     if doc.get("notes"):
-        story += [Paragraph("Notes", st["h2"])] + [Paragraph(_t(n), st["base"]) for n in doc["notes"]]
+        story += [Paragraph("Remarks", st["h2"])] + [Paragraph(_t(n), st["base"]) for n in doc["notes"]]
     story += [Spacer(1, 8), KeepTogether([Paragraph("Signatures", st["h2"])] + _signature_block(doc, st))]
+    if doc.get("system_note"):
+        story += [Spacer(1, 8), Paragraph(_t(doc["system_note"]), st["small"])]
 
     changed = any(s["changed"] for s in doc["slots"])
     ref = doc["doc_hash"][:12].upper()

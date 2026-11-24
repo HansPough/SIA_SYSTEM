@@ -138,6 +138,61 @@ class UserAdminTests(Base):
         self.assertEqual(r.status_code, 200)
         self.assertIn("own owner role", self.flashes(r))
 
+    def deactivate_shop_manager(self):
+        self.login()
+        return self.c.post("/admin/users/3/edit", data={
+            "username": "shopmgr", "full_name": "Shop Manager", "role_id": "2", "location_id": str(SHOP)})
+
+    def open_delivery(self, ts_status, ar_no=None):
+        b = self.be
+        b.execute("INSERT INTO requisitions (rf_no, shop_id, warehouse_id, status, requested_by) "
+                  "VALUES ('RF-2026-0001', 2, 1, 'open', 3)")
+        b.execute("INSERT INTO transfer_slips (ts_no, rf_id, from_location_id, to_location_id, status, prepared_by) "
+                  "VALUES ('TS-2026-0001', 1, 1, 2, :s, 2)", s=ts_status)
+        if ar_no:
+            b.execute("INSERT INTO acknowledgment_receipts (ar_no, ts_id, received_by) VALUES (:a, 1, 3)", a=ar_no)
+        b.commit()
+
+    def test_the_last_shop_manager_is_kept_while_a_delivery_is_on_the_way(self):
+        self.open_delivery("in_transit")
+        r = self.deactivate_shop_manager()
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("last shop manager", self.flashes(r))
+        self.assertIn("TS-2026-0001", self.flashes(r))
+        self.assertEqual(self.be.one("SELECT is_active FROM users WHERE id = 3")["is_active"], 1)
+
+    def test_the_last_shop_manager_is_kept_while_a_receipt_is_unsigned(self):
+        self.open_delivery("delivered", ar_no="AR-2026-0001")
+        r = self.deactivate_shop_manager()
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("AR-2026-0001", self.flashes(r))
+        self.assertEqual(self.be.one("SELECT is_active FROM users WHERE id = 3")["is_active"], 1)
+        # a second active shop manager can take over, so the deactivation goes through
+        self.be.execute("INSERT INTO users (username, full_name, role_id, location_id, is_active) VALUES "
+                        "('shopmgr2', 'Shop Manager Two', (SELECT id FROM roles WHERE code = 'shop_manager'), 2, 1)")
+        self.be.commit()
+        r = self.deactivate_shop_manager()
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.be.one("SELECT is_active FROM users WHERE id = 3")["is_active"], 0)
+
+    def test_the_last_shop_manager_cannot_change_role_or_move_while_a_delivery_is_on_the_way(self):
+        self.open_delivery("in_transit")
+        self.login()
+        r = self.c.post("/admin/users/3/edit", data={
+            "username": "shopmgr", "full_name": "Shop Manager", "role_id": "3", "location_id": str(SHOP),
+            "is_active": "on"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("last shop manager", self.flashes(r))
+        self.assertEqual(self.be.one("SELECT role_id FROM users WHERE id = 3")["role_id"], 2)
+        self.be.execute("INSERT INTO locations (code, name, loc_type) VALUES ('SHOP2', 'Second Shop', 'shop')")
+        self.be.commit()
+        r = self.c.post("/admin/users/3/edit", data={
+            "username": "shopmgr", "full_name": "Shop Manager", "role_id": "2", "location_id": "3",
+            "is_active": "on"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("last shop manager", self.flashes(r))
+        self.assertEqual(self.be.one("SELECT location_id FROM users WHERE id = 3")["location_id"], SHOP)
+
 
 class LocationAdminTests(Base):
     def test_create_location_and_duplicate_code(self):
@@ -163,6 +218,44 @@ class LocationAdminTests(Base):
         self.assertEqual(r.status_code, 200)
         self.assertIn("Cannot deactivate", self.flashes(r))
         self.assertEqual(self.be.one("SELECT is_active FROM locations WHERE id = 1")["is_active"], 1)
+
+    def test_cannot_deactivate_a_location_with_open_documents(self):
+        b = self.be
+        b.execute("INSERT INTO requisitions (rf_no, shop_id, warehouse_id, status, requested_by) "
+                  "VALUES ('RF-2026-0001', 2, 1, 'open', 2)")
+        b.execute("INSERT INTO transfer_slips (ts_no, rf_id, from_location_id, to_location_id, status, prepared_by) "
+                  "VALUES ('TS-2026-0001', 1, 1, 2, 'in_transit', 3)")
+        b.execute("INSERT INTO replenishments (ref_no, warehouse_id, status, created_by) "
+                  "VALUES ('REF-2026-0001', 1, 'approved', 2)")
+        b.execute("INSERT INTO purchase_orders (po_no, ref_id, supplier_id, approval_id, status) "
+                  "VALUES ('PO-2026-0001', 1, 1, 1, 'sent')")
+        b.execute("INSERT INTO stock_adjustments (adj_no, location_id, reason, status, requested_by) "
+                  "VALUES ('ADJ-2026-0001', 1, 'lost', 'pending', 2)")
+        b.execute("INSERT INTO stock_issues (issue_no, location_id, reason, recorded_by, status, void_reason, "
+                  "void_requested_by) VALUES ('ISS-2026-0001', 1, 'sale', 2, 'void_requested', 'wrong item', 2)")
+        b.commit()
+        self.login()
+        r = self.c.post("/admin/locations/1/edit", data={
+            "code": "WH", "name": "Warehouse", "loc_type": "warehouse"})
+        self.assertEqual(r.status_code, 200)
+        flash = self.flashes(r)
+        for name in ("RF-2026-0001", "TS-2026-0001", "PO-2026-0001", "ADJ-2026-0001", "ISS-2026-0001"):
+            self.assertIn(name, flash)
+        self.assertEqual(self.be.one("SELECT is_active FROM locations WHERE id = 1")["is_active"], 1)
+
+    def test_long_guard_lists_stop_after_five_documents(self):
+        for n in range(1, 8):
+            self.be.execute("INSERT INTO requisitions (rf_no, shop_id, warehouse_id, status, requested_by) "
+                            "VALUES (:no, 2, 1, 'open', 2)", no="RF-2026-%04d" % n)
+        self.be.commit()
+        self.login()
+        r = self.c.post("/admin/locations/1/edit", data={
+            "code": "WH", "name": "Warehouse", "loc_type": "warehouse"})
+        flash = self.flashes(r)
+        self.assertIn("7 open RFs", flash)
+        self.assertIn("RF-2026-0005", flash)
+        self.assertIn("…and 2 more", flash)
+        self.assertNotIn("RF-2026-0006", flash)
 
 
 class SecurityTests(Base):

@@ -80,19 +80,89 @@ class DocumentTests(Base):
                 signing.sign_slot({"id": self.uid[user], "role": role}, dt, 1, slot, "x" * 64)
         self.assertEqual([r["doc_type"] for r in self.sigs()].count("PO"), 0)
 
-    def test_transfer_slip_shows_the_requested_quantity_against_the_shipped(self):
+    def test_transfer_slip_lists_requested_dispatched_and_received(self):
         self.chain()
         page = self.c.get("/documents/TS/1").get_data(as_text=True)
-        self.assertIn("requested 5", page)          # RF line, while the Qty column shows what this slip carries
-        self.assertIn("requested 3", page)
-        self.assertNotIn("Changed after signing", page)      # line notes are outside the signature hash
+        for heading in ("Code", "Item", "Requested", "Dispatched", "Received", "Diff", "Remarks"):
+            self.assertIn(">%s<" % heading, page)
+        self.assertIn("<strong>Total</strong>", page)
+        self.assertNotIn("Changed after signing", page)
+        # in transit: the shop has not counted yet, so received and diff stay unknown
+        self.assertEqual(page.count('<td class="num">–</td>'), 4)
 
-    def test_receipt_shows_requested_against_received_and_the_shortfall(self):
+    def test_receipt_shows_requested_against_received_with_the_shortfall(self):
         self.chain()
         self.receive(qty_b=2, reason="one short")
         page = self.c.get("/documents/AR/1").get_data(as_text=True)
-        self.assertIn("requested 3", page)
-        self.assertIn("1 rejected/short", page)
+        for heading in ("Requested", "Received", "Diff", "Remarks"):
+            self.assertIn(">%s<" % heading, page)
+        self.assertIn("one short", page)
+        self.assertIn('class="num diff-short">-1</td>', page)   # a short line stands out
+        self.assertIn("Yes (-1 pcs)", page)
+
+    def test_short_dispatch_is_a_variance_even_when_every_dispatched_unit_arrives(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.chain("only 5 in stock")
+        self.receive()                              # every dispatched unit arrived, but 3 were never sent
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        self.assertTrue(ar["has_variance"])
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("Yes (-3 pcs)", page)
+        self.assertIn('class="num diff-short">-3</td>', page)
+
+    def test_short_dispatch_reason_prints_on_the_ts_and_the_ar(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.chain("only 5 in stock")
+        self.assertIn("only 5 in stock", self.c.get("/documents/TS/1").get_data(as_text=True))
+        self.receive()                              # every dispatched unit accepted
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("only 5 in stock", page)      # the shop sees why 3 never came
+
+    def test_a_short_line_shows_both_reasons_in_one_remark(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.chain("only 5 in stock")
+        self.receive(qty_a=4, reason="one damaged")  # short dispatch and a further rejection
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("only 5 in stock · one damaged", page)
+
+    def test_receipt_prints_the_header_remarks_under_remarks(self):
+        self.chain()
+        data = self.receive_data()
+        data["remarks"] = "ok"
+        self.login("shopmgr")
+        self.c.post("/delivery/deliveries/%d/receive" % self.ts_id(), data=data)
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertIn("<h2>Remarks</h2>", page)               # the form field and the document use one word
+        self.assertNotIn("<h2>Notes</h2>", page)
+        self.assertIn("<p>ok</p>", page)
+
+    def test_receipt_totals_foot_the_columns(self):
+        self.chain()
+        self.receive(qty_b=2, reason="one short")
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        footer = page[page.index("<tfoot>"):page.index("</tfoot>")]
+        self.assertIn("<strong>8</strong>", footer)       # requested 5 + 3
+        self.assertIn("<strong>7</strong>", footer)       # received 5 + 2
+        self.assertIn("diff-short\"><strong>-1</strong>", footer)
+
+    def test_receipt_is_system_generated_so_it_has_no_prepared_by_line(self):
+        self.chain()
+        self.receive()
+        page = self.c.get("/documents/AR/1").get_data(as_text=True)
+        self.assertNotIn("Prepared by", page)
+        self.assertIn("Generated automatically when the shop confirms delivery.", page)
+        self.assertIn("Received by", page)                # the receiver still acknowledges
+
+    def test_transfer_slip_and_receipt_still_build_a_pdf(self):
+        self.chain()
+        self.receive(qty_b=2, reason="one short")
+        for doc_type in ("TS", "AR"):
+            r = self.c.get("/documents/%s/1.pdf" % doc_type)
+            self.assertEqual(r.status_code, 200, doc_type)
+            self.assertTrue(r.data.startswith(b"%PDF"), doc_type)
 
     def test_receiving_signs_the_ar_and_the_ts_received_line(self):
         self.chain()
@@ -269,15 +339,19 @@ class DocumentTests(Base):
         self.c.post("/delivery/deliveries/%d/receive" % self.ts_id(), data=data)
         self.assertEqual(self.be.one("SELECT status FROM transfer_slips")["status"], "in_transit")
 
-    def test_receive_page_shows_the_ts_check_panel(self):
+    def test_receive_page_shows_the_ts_and_the_unsigned_ar(self):
         self.chain()
         self.login("shopmgr")
         page = self.c.get("/delivery/deliveries/%d/receive" % self.ts_id()).get_data(as_text=True)
-        self.assertIn("Check the TS", page)
-        self.assertIn("Released by", page)
-        self.assertIn("whmgr", page)                                  # who released it
-        self.assertIn("Dan Driver", page)
+        self.assertIn("Transfer Slip", page)                    # the actual TS, not a summary card
+        self.assertIn("Released by (Warehouse)", page)
+        self.assertIn("Acknowledgment Receipt", page)          # the AR preview, unsigned
+        self.assertIn("Not signed yet", page)
+        self.assertIn("Pending", page)
         self.assertIn('name="counted[]"', page)
+        self.assertNotIn("Count each line", page)               # no prompting notes
+        self.assertNotIn("Accepted + rejected", page)
+        self.assertNotIn("/documents/AR/0.pdf", page)           # the preview has no saved document yet
 
     # ---- PO: owner approves, warehouse manager sends ----
     def test_only_the_warehouse_manager_can_send_a_po(self):
@@ -294,7 +368,7 @@ class DocumentTests(Base):
         page = self.c.get("/purchasing/po/1").get_data(as_text=True)
         self.assertNotIn("Sign &amp; mark as sent", page)
         self.assertIn("Ready to send", page)
-        self.assertIn("The warehouse manager sends it", page)
+        self.assertNotIn("The warehouse manager sends it", page)  # no prompting notes
         self.login("whmgr")
         self.assertIn("Sign &amp; mark as sent", self.c.get("/purchasing/po/1").get_data(as_text=True))
         self.c.post("/purchasing/po/1", data={"action": "mark_sent"})

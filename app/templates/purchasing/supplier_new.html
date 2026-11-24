@@ -3,7 +3,6 @@
 {% block title %}New supplier{% endblock %}
 {% block content %}
 <div class="page-head"><h1>New supplier</h1></div>
-<p class="note">Agreed prices are only for regular suppliers.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Supplier name', 'supplier_name', 'text', value=f.get('supplier_name', ''), required=True, col=2) }}

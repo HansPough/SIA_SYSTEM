@@ -111,6 +111,48 @@ class ItemScreenTests(unittest.TestCase):
         self.assertNotIn("TIR-0001", self.c.get("/admin/items").get_data(as_text=True))          # hidden by default
         self.assertIn("TIR-0001", self.c.get("/admin/items?status=inactive").get_data(as_text=True))
 
+    def test_cannot_deactivate_an_item_that_is_still_on_open_paperwork(self):
+        b = self.be
+        form = {"category": "tire", "brand": "ANSU", "model": "BY616", "size": "215/75R17.5", "ply_rating": "18PR",
+                "pattern": "Rib", "item_name": "ANSU 215/75R17.5 18PR BY616 RIB"}
+        b.execute("INSERT INTO locations (code, name, loc_type) VALUES ('SHOP', 'Shop', 'shop')")
+        b.execute("INSERT INTO requisitions (rf_no, shop_id, warehouse_id, status, requested_by) "
+                  "VALUES ('RF-2026-0001', 2, 1, 'open', 3)")
+        b.execute("INSERT INTO requisition_items (rf_id, item_id, qty_requested) VALUES (1, 1, 4)")
+        b.execute("INSERT INTO replenishments (ref_no, warehouse_id, status, created_by) "
+                  "VALUES ('REF-2026-0001', 1, 'submitted', 2)")
+        b.execute("INSERT INTO replenishment_items (ref_id, item_id, qty_requested, rf_id) VALUES (1, 1, 4, 1)")
+        b.execute("INSERT INTO purchase_orders (po_no, ref_id, supplier_id, approval_id, status) "
+                  "VALUES ('PO-2026-0001', 1, 1, 1, 'sent')")
+        b.execute("INSERT INTO purchase_order_items (po_id, replenishment_item_id, item_id, qty_ordered, unit_price) "
+                  "VALUES (1, 1, 1, 4, 10.00)")
+        b.execute("INSERT INTO transfer_slips (ts_no, rf_id, from_location_id, to_location_id, status, prepared_by) "
+                  "VALUES ('TS-2026-0001', 1, 1, 2, 'in_transit', 2)")
+        b.execute("INSERT INTO transfer_slip_items (ts_id, rf_item_id, item_id, qty_released) VALUES (1, 1, 1, 2)")
+        b.execute("INSERT INTO reservations (rf_item_id, item_id, location_id, qty, status) VALUES (1, 1, 1, 2, 'reserved')")
+        b.execute("INSERT INTO stock_adjustments (adj_no, location_id, reason, status, requested_by) "
+                  "VALUES ('ADJ-2026-0001', 1, 'lost', 'pending', 3)")
+        b.execute("INSERT INTO stock_adjustment_items (adjustment_id, item_id, qty_system, qty_actual) "
+                  "VALUES (1, 1, 3, 2)")
+        b.commit()
+        r = self.c.post("/admin/items/1/edit", data=form)
+        self.assertEqual(r.status_code, 200)
+        page = r.get_data(as_text=True)
+        for name in ("RF-2026-0001", "REF-2026-0001", "PO-2026-0001", "TS-2026-0001", "ADJ-2026-0001",
+                     "2 units reserved for RFs"):
+            self.assertIn(name, page)
+        self.assertEqual(self.item("TIR-0001")["is_active"], 1)
+        # once the paperwork is closed the item can be switched off
+        b.execute("UPDATE requisitions SET status = 'closed'")
+        b.execute("UPDATE replenishments SET status = 'closed'")
+        b.execute("UPDATE purchase_orders SET status = 'received'")
+        b.execute("UPDATE transfer_slips SET status = 'delivered'")
+        b.execute("UPDATE reservations SET status = 'released'")
+        b.execute("UPDATE stock_adjustments SET status = 'approved', reviewed_by = 2")
+        b.commit()
+        self.assertEqual(self.c.post("/admin/items/1/edit", data=form).status_code, 302)
+        self.assertEqual(self.item("TIR-0001")["is_active"], 0)
+
     def test_list_filters_and_roles(self):
         page = self.c.get("/admin/items?q=jetway").get_data(as_text=True)
         self.assertIn("TIR-0002", page)

@@ -509,6 +509,13 @@ class NewWorkflowTests(Base):
         self.assertIn("Created", html)
         self.assertIn("Signed (Warehouse Manager)", html)
 
+    def test_incoming_delivery_offers_progress_and_details_before_receiving(self):
+        self.chain()
+        self.login("shopmgr")
+        html = page(self.c.get("/delivery/deliveries"))
+        self.assertIn('href="/delivery/transfers/1"', html)   # Open -> the TS page with Progress and details
+        self.assertIn('href="/delivery/deliveries/1/receive"', html)
+
     def test_delivered_transfer_offers_the_acknowledgment_receipt_preview(self):
         self.chain()
         self.receive()

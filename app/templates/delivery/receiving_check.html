@@ -7,7 +7,6 @@
 {% set rejected_vals = f.getlist('qty_rejected[]') %}
 {% set reason_vals = f.getlist('reject_reason[]') %}
 <div class="page-head"><h1>Check goods</h1><span class="badge">{{ po.po_no }}</span></div>
-<p class="note">Accepted + rejected = delivered.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RM no.', 'rm_no', 'text', value=next_no, readonly=True) }}

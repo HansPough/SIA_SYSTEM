@@ -91,7 +91,8 @@ Still to reserve = `qty_requested - qty_reserved`. Still to deliver = `qty_reser
 
 ## What Inventory already does for you
 
-* Sale or issue, adjustment approval, confirming a void and the RF queue all update stock and alerts for you.
+* Sale or issue, adjustment approval, confirming a void and the RF queue all update stock and alerts for you. A requested void can be withdrawn by the person who asked for it until a manager reviews it; a pending adjustment can be cancelled by the person who raised it.
+* An item cannot be switched off while it still has stock or appears on open paperwork (RF, REF, PO, active TS, a held reservation or a pending adjustment); a location cannot be deactivated while it still has open paperwork. The error names the documents.
 * Stock list, stock card (with ledger), ROP settings, items, brands and patterns, reports (stock, reorder, movements, sales, adjustments).
 
 ## Rules to keep

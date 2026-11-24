@@ -297,6 +297,41 @@ class VoidTests(Base):
         self.login("shopmgr")
         self.assertIn("1 to confirm", self.c.get("/").get_data(as_text=True))
 
+    def withdraw(self, who="shopstaff"):
+        self.login(who)
+        return self.c.post("/inventory/issues/1/void-withdraw")
+
+    def test_the_requester_can_take_the_void_back(self):
+        self.sell(2)
+        self.req()
+        page = self.c.get("/inventory/issues/1").get_data(as_text=True)
+        self.assertIn('class="btn small danger">Withdraw request</button>', page)
+        self.assertIn("return confirm('Withdraw this void request?", page)
+        r = self.withdraw()
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.status(), "posted")
+        self.assertEqual(self.bal(A, SHOP)["on_hand"], 8)                        # the sale stays
+        row = self.be.one("SELECT void_reason, void_requested_by FROM stock_issues")
+        self.assertEqual((row["void_reason"], row["void_requested_by"]), (None, None))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'void_withdraw'")["n"], 1)
+        page = self.c.get("/inventory/issues/1").get_data(as_text=True)
+        self.assertIn("Request void", page)
+        self.assertNotIn("Withdraw request", page)
+        self.req(reason="Second try")                                            # can be requested again
+        self.assertEqual(self.status(), "void_requested")
+
+    def test_only_the_person_who_requested_the_void_can_withdraw_it(self):
+        self.sell(2, who="shopmgr")
+        self.req(who="shopmgr", reason="my mistake")
+        self.login("shopstaff")
+        self.assertNotIn("Withdraw request", self.c.get("/inventory/issues/1").get_data(as_text=True))
+        r = self.withdraw("shopstaff")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.status(), "void_requested")
+        self.assertIn("Only the person who requested", self.c.get(r.headers["Location"]).get_data(as_text=True))
+        self.withdraw("shopmgr")
+        self.assertEqual(self.status(), "posted")
+
 
 class RfQueueTests(Base):
     def make_rf(self, lines):

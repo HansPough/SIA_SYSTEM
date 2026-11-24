@@ -17,7 +17,7 @@
 <tbody>
 {% for r in res.rows %}
 <tr><td class="nowrap">{{ r.ref_no }}</td><td>{{ r.supplier_name }}</td>
-<td>{{ 'Quotation' if r.basis == 'quotation' else 'Agreed price' }}</td>
+<td>{{ 'Quotation' if r.basis == 'quotation' else 'Mixed' if r.basis == 'mixed' else 'Agreed price' }}</td>
 <td class="num">{% if r.total is not none %}{{ r.total|money }}{% else %}–{% endif %}</td>
 <td class="nowrap">{{ (r.submitted_at|string)[:10] }}</td>
 <td>{{ m.status(r.decision) }}</td>

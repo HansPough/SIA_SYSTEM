@@ -22,7 +22,7 @@
 <td class="num">{{ r.qty_expected }}</td><td class="num">{{ r.qty_received }}</td>
 <td class="num">{{ r.qty_rejected }}</td><td>{{ r.variance_reason or '–' }}</td>
 <td>{{ m.status('open') if not r.variance_resolved_at else m.status('resolved') }}</td>
-<td><a class="btn small" href="{{ url_for('documents.view', doc_type='AR', doc_id=r.ar_id) }}">Open AR</a></td></tr>
+<td class="nowrap"><a class="btn small" href="{{ url_for('documents.view', doc_type='AR', doc_id=r.ar_id) }}">Open AR</a></td></tr>
 {% else %}
 <tr><td colspan="11" class="muted">No shop variances found.</td></tr>
 {% endfor %}

@@ -34,7 +34,7 @@
 <dl class="info">
   <div><dt>AR no.</dt><dd>{{ ts.ar.ar_no }}</dd></div>
   <div><dt>Received</dt><dd>{{ (ts.ar.received_at|string)[:16] }}</dd></div>
-  <div><dt>Variance</dt><dd>{{ 'Yes' if ts.ar.has_variance else 'No' }}</dd></div>
+  <div><dt>Variance</dt><dd>{{ ts.ar.variance_label }}</dd></div>
   {% if ts.ar.remarks %}<div><dt>Remarks</dt><dd>{{ ts.ar.remarks }}</dd></div>{% endif %}
 </dl>
 {% endif %}

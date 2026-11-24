@@ -136,6 +136,9 @@ every 9 seconds (and immediately when the tab becomes visible).
   the adjustments list when it was opened from there. The count sheet always returns to Stock.
 * **A manager's own count or adjustment is applied on save** (`auto_approved`), because a manager
   does not approve their own work. The stock ledger records it like any approved adjustment.
+* The person who raised a pending adjustment can cancel it from the detail page
+  (**Cancel adjustment**, red, with a confirm prompt). The request and its lines are deleted;
+  nothing is approved and no stock moves. A manager or the owner cannot cancel someone else's.
 
 ## 8. Document numbers, details and lifecycle
 

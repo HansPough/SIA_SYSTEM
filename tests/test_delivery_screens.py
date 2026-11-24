@@ -104,9 +104,11 @@ class Base(unittest.TestCase):
         return self.be.all("SELECT * FROM transfer_slip_items WHERE ts_id = :t ORDER BY id",
                            t=self.ts_id())
 
-    def prepare(self):
+    def prepare(self, note=""):
+        """Create the TS. note is the reason line A is sent short (only when it is)."""
         self.login("whmgr")
-        return self.c.post("/delivery/transfers/new", data={"rf_id": "1"})
+        return self.c.post("/delivery/transfers/new",
+                           data={"rf_id": "1", "rf_item_id[]": ["1", "2"], "dispatch_note[]": [note, ""]})
 
     def assign(self, driver=1, vehicle=1):
         self.login("whmgr")
@@ -130,8 +132,8 @@ class Base(unittest.TestCase):
         self.login("whmgr")
         return self.c.post("/delivery/transfers/%d/release" % self.ts_id(), data=data)
 
-    def chain(self):
-        self.prepare()
+    def chain(self, note=""):
+        self.prepare(note)
         tid = self.ts_id()
         self.assign()
         self.load()
@@ -199,7 +201,7 @@ class TransferTests(Base):
     def test_active_transfer_prevents_changing_reserved_quantities(self):
         self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
         self.be.commit()
-        self.prepare()
+        self.prepare("only 5 in stock")
         self.login("whmgr")
         page = self.c.get("/inventory/rf-queue/1").get_data(as_text=True)
         self.assertNotIn('value="reserve_stock"', page)
@@ -212,10 +214,28 @@ class TransferTests(Base):
         self.assertEqual(response.headers["Location"], "/delivery/transfers/new?rf_id=1")
         self.assertEqual(inv.get_balance(A, WH)["reserved"], 6)
 
+    def test_short_dispatch_needs_a_reason(self):
+        self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
+        self.be.commit()
+        self.login("whmgr")
+        page = self.c.get("/delivery/transfers/new?rf_id=1").get_data(as_text=True)
+        self.assertIn("Short by", page)
+        self.assertIn('<input type="text" name="dispatch_note[]" maxlength="200" required', page)
+        form_at = page.index('<form method="post">')
+        note_at = page.index('name="dispatch_note[]"')
+        self.assertTrue(form_at < note_at < page.index("</form>", form_at))   # the browser sends it
+        r = self.prepare()                                  # sent short with no reason
+        self.assertIn("only 5 of 8 is being sent. Say why", " ".join(self.flashes(r)))
+        self.assertIsNone(self.be.one("SELECT id FROM transfer_slips"))
+        self.prepare("only 5 in stock")
+        self.assertEqual(self.be.one("SELECT dispatch_note FROM transfer_slip_items WHERE ts_id = 1")["dispatch_note"],
+                         "only 5 in stock")
+        self.assertEqual(self.be.one("SELECT qty_needed FROM transfer_slip_items WHERE ts_id = 1")["qty_needed"], 8)
+
     def test_remaining_stock_can_be_reserved_while_transfer_is_in_transit(self):
         self.be.execute("UPDATE requisition_items SET qty_requested = 8 WHERE id = 1")
         self.be.commit()
-        self.chain()
+        self.chain("only 5 in stock")
         self.login("whmgr")
         response = self.c.post("/inventory/rf-queue/1", data={"rf_item_id[]": ["1"], "qty_reserve[]": ["3"]})
         self.assertEqual(response.headers["Location"], "/delivery/transfers/1")
@@ -228,7 +248,8 @@ class TransferTests(Base):
         self.assertIn('Create transfer', page)
         self.assertIn('ANSU 12R22.5 18PR AL505', page)
         self.assertIn('RODEO 1200R20 20PR RT201', page)
-        self.assertRegex(page, r'ANSU 12R22.5 18PR AL505.*?</td><td class="num">5</td>')
+        self.assertIn("<th class=\"num\">Still needed</th><th class=\"num\">On TS</th>", page)
+        self.assertRegex(page, re.compile(r'ANSU 12R22\.5 18PR AL505.*?<td class="num">5</td>', re.S))
         self.assertNotIn('RF-2026-9001', self.c.get("/delivery/transfers/new?rf_id=999").get_data(as_text=True))
 
     def test_queue_links_directly_to_next_step(self):
@@ -389,7 +410,9 @@ class ShopReceivingTests(Base):
         inv.reserve(1, A, WH, 1, self.uid["whmgr"])
         self.be.execute("UPDATE requisition_items SET qty_reserved = qty_reserved + 1 WHERE id = 1")
         self.be.commit()
-        self.prepare()
+        self.prepare()                                  # the remainder is the whole line, so no reason is asked
+        self.assertIsNone(self.ts_items()[0]["dispatch_note"])
+        self.assertEqual(self.ts_items()[0]["qty_needed"], 1)   # only the unit still owed
         self.assign()
         self.load()
         self.release()
@@ -397,9 +420,64 @@ class ShopReceivingTests(Base):
         self.assertEqual(r.status_code, 302)
         first = self.be.one("SELECT * FROM acknowledgment_receipt_items WHERE item_id = 1 ORDER BY id LIMIT 1")
         self.assertIsNotNone(first["variance_resolved_at"])
+        # the remainder is measured against the 1 unit it was sent for, not the RF total of 5
+        page = self.c.get("/documents/AR/2").get_data(as_text=True)
+        self.assertIn('class="num diff-zero">0</td>', page)
+        self.assertNotIn("Yes (", page)
+        self.assertNotIn("diff-short", page)
         self.assertEqual(self.be.one("SELECT status FROM requisitions")["status"], "closed")
         self.assertEqual(inv.get_balance(A, SHOP)["on_hand"], 5)
         self.assertEqual(self.be.one("SELECT qty_delivered FROM requisition_items WHERE id = 1")["qty_delivered"], 5)
+
+    def test_discrepancies_list_is_read_only(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        ari = self.be.one("SELECT id FROM acknowledgment_receipt_items WHERE item_id = 1")
+        for who in ("owner", "whmgr"):
+            self.login(who)
+            page = self.c.get("/delivery/variances").get_data(as_text=True)
+            self.assertIn(ar["ar_no"], page)
+            self.assertIn("one tire missing", page)
+            self.assertIn("/documents/AR/%d" % ar["id"], page)
+            self.assertNotIn('name="resolution_note"', page)
+            self.assertNotIn("/variances/%d/resolve" % ari["id"], page)
+
+    def test_approving_an_adjustment_linked_to_the_ar_resolves_the_variance(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        self.login("whstaff")
+        r = self.c.post("/inventory/adjustments/new", data={
+            "reason": "Delivery variance", "ar_no": ar["ar_no"], "remarks": "written off at the shop",
+            "item_id[]": ["1"], "qty_actual[]": ["15"], "item_remarks[]": ["short at shop"]})
+        self.assertEqual(r.status_code, 302, self.flashes(r))
+        adj_id = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        page = self.c.get("/inventory/adjustments/%d" % adj_id).get_data(as_text=True)
+        self.assertIn(ar["ar_no"], page)
+        self.assertIn("/documents/AR/%d" % ar["id"], page)                      # the link is shown
+        self.assertIsNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                      "WHERE item_id = 1")["variance_resolved_at"])
+        self.login("whmgr")
+        self.c.post("/inventory/adjustments/%d/review" % adj_id,
+                    data={"decision": "approve", "review_remarks": "approved write-off"})
+        self.assertIsNotNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                         "WHERE item_id = 1")["variance_resolved_at"])
+        audit = self.be.one("SELECT * FROM audit_log WHERE table_name = 'acknowledgment_receipt_items' "
+                            "AND action = 'resolve'")
+        self.assertIn("adjustment", audit["new_values"])
+
+    def test_a_manager_linked_adjustment_resolves_the_variance_on_save(self):
+        self.chain()
+        self.receive(qty_a=4, reason="one tire missing")
+        ar = self.be.one("SELECT * FROM acknowledgment_receipts")
+        self.login("whmgr")
+        r = self.c.post("/inventory/adjustments/new", data={
+            "reason": "Delivery variance", "ar_no": ar["ar_no"],
+            "item_id[]": ["1"], "qty_actual[]": ["15"]})
+        self.assertEqual(r.status_code, 302, self.flashes(r))
+        self.assertIsNotNone(self.be.one("SELECT variance_resolved_at FROM acknowledgment_receipt_items "
+                                         "WHERE item_id = 1")["variance_resolved_at"])
 
     def test_cannot_receive_a_ts_that_is_not_in_transit(self):
         self.prepare()

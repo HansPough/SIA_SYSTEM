@@ -34,7 +34,8 @@ def transfer_new():
         return redirect(url_for("dashboard.index"))
     if request.method == "POST":
         try:
-            ts_id, ts_no = dop.create_transfer(user, request.form.get("rf_id"))
+            notes = dict(zip(request.form.getlist("rf_item_id[]"), request.form.getlist("dispatch_note[]")))
+            ts_id, ts_no = dop.create_transfer(user, request.form.get("rf_id"), notes)
             assigned = bool(request.form.get("driver_id") or request.form.get("vehicle_id"))
             if assigned:        # one step: prepare and assign the driver and vehicle together
                 dop.assign_transfer(user, ts_id, request.form.get("driver_id"),

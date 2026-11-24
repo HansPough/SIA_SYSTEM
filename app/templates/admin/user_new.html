@@ -3,7 +3,6 @@
 {% block title %}New user{% endblock %}
 {% block content %}
 <div class="page-head"><h1>New user</h1></div>
-<p class="note">Drivers and suppliers do not need accounts.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('Username', 'username', 'text', value=f.get('username', ''), required=True) }}

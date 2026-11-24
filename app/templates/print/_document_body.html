@@ -1,9 +1,11 @@
 {% import '_macros.html' as m %}
 <div class="card doc">
+  {% if d.doc_id %}
   <div class="doc-tools no-print">
     <a class="btn small" href="{{ url_for('documents.pdf', doc_type=d.doc_type, doc_id=d.doc_id) }}" download>Download PDF</a>
     <button type="button" class="btn small" data-print-doc>Print</button>
   </div>
+  {% endif %}
   <div class="doc-head">
     <div class="doc-brand">
       <img class="doc-logo" src="{{ url_for('static', filename='img/logo.svg') }}" alt="">
@@ -30,6 +32,27 @@
 
   <h2>Items</h2>
   <div class="table-wrap"><table class="data doc-items">
+    {% if d.qty_columns %}
+    <thead><tr><th>Code</th><th>Item</th>
+      {% for key, label in d.qty_columns %}<th class="num">{{ label }}</th>{% endfor %}
+      <th class="num">Diff</th><th>Remarks</th></tr></thead>
+    <tbody>
+    {% for it in d.lines %}
+    <tr><td class="nowrap">{{ it.code }}</td><td>{{ it.name }}</td>
+      {% for key, label in d.qty_columns %}<td class="num">{{ it[key] if it[key] is not none else '–' }}</td>{% endfor %}
+      <td class="num{% if it.diff is not none and it.diff < 0 %} diff-short{% elif it.diff == 0 %} diff-zero{% endif %}">{{ it.diff if it.diff is not none else '–' }}</td>
+      <td>{{ it.note or '–' }}</td></tr>
+    {% else %}
+    <tr><td colspan="{{ 4 + d.qty_columns|length }}" class="muted">No items.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if d.qty_totals %}
+    <tfoot><tr><td colspan="2" class="num"><strong>Total</strong></td>
+      {% for key, label in d.qty_columns %}<td class="num"><strong>{{ d.qty_totals[key] if d.qty_totals[key] is not none else '–' }}</strong></td>{% endfor %}
+      <td class="num{% if d.qty_totals.diff is not none and d.qty_totals.diff < 0 %} diff-short{% elif d.qty_totals.diff == 0 %} diff-zero{% endif %}"><strong>{{ d.qty_totals.diff if d.qty_totals.diff is not none else '–' }}</strong></td>
+      <td></td></tr></tfoot>
+    {% endif %}
+    {% else %}
     <thead><tr><th>Code</th><th>Item</th><th class="num">Qty</th>{% if d.show_prices %}<th class="num">Unit price</th><th class="num">Amount</th>{% endif %}<th>Note</th></tr></thead>
     <tbody>
     {% for it in d.lines %}
@@ -44,10 +67,11 @@
     <tfoot><tr><td colspan="{{ 4 if d.show_prices else 2 }}" class="num"><strong>Total</strong></td>
       <td class="num"><strong>{{ d.total|money }}</strong></td>{% if d.show_prices %}<td></td>{% endif %}</tr></tfoot>
     {% endif %}
+    {% endif %}
   </table></div>
 
   {% if d.notes %}
-  <h2>Notes</h2>
+  <h2>Remarks</h2>
   <div class="doc-notes">{% for n in d.notes %}<p>{{ n }}</p>{% endfor %}</div>
   {% endif %}
 
@@ -79,5 +103,5 @@
     </div>
     {% endfor %}
   </div>
-  <p class="doc-foot">Signed electronically in the {{ company }} system. Each signature records the account, role, time and document fingerprint (ref {{ d.doc_hash[:12]|upper }}).</p>
+  <p class="doc-foot">{% if d.system_note %}{{ d.system_note }} {% endif %}Signed electronically in the {{ company }} system. Each signature records the account, role, time and document fingerprint (ref {{ d.doc_hash[:12]|upper }}).</p>
 </div>
