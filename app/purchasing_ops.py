@@ -616,6 +616,15 @@ def get_rfq(rfq_id, user):
     return rq
 
 
+def rfq_supplier_quote(rfq_id, supplier_id):
+    """What one supplier quoted on one RFQ: {item_id: {"unit_price", "qty_offered"}}, live lines only."""
+    rows = _b().all(
+        "SELECT qi.item_id, qi.unit_price, qi.qty_offered FROM quotation_items qi "
+        "JOIN quotations q ON q.id = qi.quotation_id "
+        "WHERE q.rfq_id = :r AND q.supplier_id = :s AND qi.superseded_at IS NULL", r=rfq_id, s=supplier_id)
+    return {r["item_id"]: {"unit_price": _price_text(r["unit_price"]), "qty_offered": r["qty_offered"]} for r in rows}
+
+
 def next_supplier_to_quote(ref_id, current_supplier_id):
     """After saving one reply: the next supplier of the latest RFQ that has not replied yet."""
     rfq = _ref_rfq(ref_id)
@@ -909,15 +918,15 @@ def _annotate_offers(options, need):
     """Plain numbers and medals for comparing the offers on one line, in place. Display only: it
     never changes which offer is pre-selected.
 
-    * rank 1/2/3: gold, silver, bronze by unit price (equal prices share a medal). Only given when
-      there are at least two different prices to compare.
+    * rank 1: the lowest unit price (equal lowest prices share it). Only given when there are at
+      least two different prices to compare. There is no 2nd or 3rd place.
     * fastest: the shortest stated lead time, only when the offers state different lead times.
     * covers / short / total: whether the offer covers the quantity needed, and what that costs.
     * above: how much more than the lowest price it is.
     Offers are listed cheapest first, expired ones last."""
     usable = [o for o in options if not o["expired"]]
     prices = sorted({_dec(o["unit_price"]) for o in usable})
-    medal = {p: i + 1 for i, p in enumerate(prices[:3])} if len(prices) > 1 else {}
+    lowest = prices[0] if len(prices) > 1 else None
     leads = [o["lead"] for o in usable if o["lead"] is not None]
     best_lead = min(leads) if len(set(leads)) > 1 else None
     low = prices[0] if prices else None
@@ -927,7 +936,7 @@ def _annotate_offers(options, need):
         o["short"] = max(0, need - o["max_qty"])
         o["supplies"] = min(o["max_qty"], need)
         o["total"] = _price_text(_amount(o["supplies"], o["unit_price"]))
-        o["rank"] = None if o["expired"] else medal.get(price)
+        o["rank"] = 1 if (lowest is not None and not o["expired"] and price == lowest) else None
         o["only_offer"] = (not o["expired"]) and len(usable) == 1
         o["fastest"] = (not o["expired"]) and best_lead is not None and o["lead"] == best_lead
         if low is not None and not o["expired"] and price > low:

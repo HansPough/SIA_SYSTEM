@@ -448,3 +448,24 @@ function updateDiff(row) {
     update();
   });
 })();
+
+// ---- Quotation lines: quantity 0 means "the supplier did not offer this item" ------------------
+// The price box normally insists on at least 0.01. For a line the supplier did not offer, the price is
+// blank or 0, so the browser must not block the form for it. (The box is NOT disabled: the form sends
+// quantity, price and lead time as parallel lists, and a missing field would shift every later value
+// onto the wrong item. The server skips lines with quantity 0.)
+(function () {
+  function sync(row) {
+    var qty = row.querySelector('input[name="qty_offered[]"]');
+    var price = row.querySelector('input[name="unit_price[]"]');
+    if (!qty || !price) { return; }
+    if (!price.hasAttribute("data-min")) { price.setAttribute("data-min", price.getAttribute("min") || "0.01"); }
+    var notOffered = (parseInt(qty.value, 10) || 0) === 0;
+    if (notOffered) { price.removeAttribute("min"); } else { price.setAttribute("min", price.getAttribute("data-min")); }
+    row.classList.toggle("line-off", notOffered);
+  }
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.matches && e.target.matches('input[name="qty_offered[]"]')) { sync(e.target.closest("tr")); }
+  });
+  document.querySelectorAll("tr[data-item-id]").forEach(sync);
+})();

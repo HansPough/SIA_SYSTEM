@@ -6,7 +6,6 @@
 {% set can_quote = wm and rfq.is_latest and rfq.ref_status in ['submitted', 'rfq_sent'] %}
 <div class="page-head no-print">
   <h1>{{ rfq.rfq_no }}</h1>
-  {{ m.status(rfq.status) }}
 </div>
 
 <div class="card flow no-print">
@@ -19,8 +18,10 @@
 <div class="doc-split">
 <div class="doc-main">
   {% if supplier_id %}
-  <div class="note no-print">This is the copy addressed to one supplier. It does not name the other suppliers.
+  <div class="note no-print">This is the copy addressed to one supplier, with the prices they quoted. It does not name the other suppliers.
     <a href="{{ url_for('purchasing.rfq_detail', ref_id=rfq.ref_id, rfq_id=rfq.id) }}">Show the internal copy</a></div>
+  {% else %}
+  <div class="note no-print">Prices are shown on each supplier's own copy. Choose <strong>Copy</strong> next to a supplier below.</div>
   {% endif %}
   {% set d = load_document('RFQ', rfq.id, supplier_id) %}
   {% if d %}{% include 'print/_document_body.html' %}{% endif %}
@@ -55,7 +56,6 @@
   <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=rfq.ref_id) }}">{{ rfq.ref_no }}</a></dd></div>
   <div><dt>Reply deadline</dt><dd>{{ (rfq.reply_deadline|string)[:10] if rfq.reply_deadline else 'None set' }}</dd></div>
   <div><dt>Created by</dt><dd>{{ rfq.created_by_name }}</dd></div>
-  <div><dt>Status</dt><dd>{{ m.status(rfq.status) }}</dd></div>
 </dl>
 <h2>Lifecycle</h2>
 <ul class="timeline">

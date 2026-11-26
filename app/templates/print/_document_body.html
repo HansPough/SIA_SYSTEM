@@ -15,7 +15,7 @@
       <h2 class="doc-title">{{ d.title }}</h2>
       <div class="doc-no">{{ d.doc_no }}</div>
       <div class="doc-date">Date: <strong>{{ d.date }}</strong></div>
-      <div class="doc-status">{{ m.status(d.status) }}</div>
+      {% if d.status %}<div class="doc-status">{{ m.status(d.status) }}</div>{% endif %}
     </div>
   </div>
 
@@ -23,8 +23,6 @@
     <div><span>{{ d.party_from[0] }}</span><strong>{{ d.party_from[1] }}</strong></div>
     <div><span>{{ d.party_to[0] }}</span><strong>{{ d.party_to[1] }}</strong></div>
   </div>
-
-  {% if d.intro %}<p class="doc-intro">{{ d.intro }}</p>{% endif %}
 
   {% if d.meta %}
   <dl class="info doc-meta">
@@ -55,15 +53,14 @@
       <td></td></tr></tfoot>
     {% endif %}
     {% else %}
-    <thead><tr><th>Code</th><th>Item</th><th class="num">Qty</th>{% if d.show_prices %}<th class="num">Unit price</th><th class="num">Amount</th>{% endif %}{% for label in (d.reply_columns or []) %}<th class="fill-head">{{ label }}</th>{% endfor %}{% if not d.reply_columns %}<th>Note</th>{% endif %}</tr></thead>
+    <thead><tr><th>Code</th><th>Item</th><th class="num">Qty</th>{% if d.show_prices %}<th class="num">Unit price</th><th class="num">Amount</th>{% endif %}<th>Note</th></tr></thead>
     <tbody>
     {% for it in d.lines %}
     <tr><td class="nowrap">{{ it.code }}</td><td>{{ it.name }}</td><td class="num">{{ it.qty }}</td>
-      {% if d.show_prices %}<td class="num">{{ it.price|money }}</td><td class="num">{{ it.amount|money }}</td>{% endif %}
-      {% for label in (d.reply_columns or []) %}<td class="fill" aria-label="{{ label }}: supplier fills in"></td>{% endfor %}
-      {% if not d.reply_columns %}<td>{{ it.note or '' }}</td>{% endif %}</tr>
+      {% if d.show_prices %}<td class="num">{{ it.price|money if it.price is not none else '–' }}</td><td class="num">{{ it.amount|money if it.amount is not none else '–' }}</td>{% endif %}
+      <td>{{ it.note or '' }}</td></tr>
     {% else %}
-    <tr><td colspan="{{ 6 if d.show_prices else (3 + (d.reply_columns|length if d.reply_columns else 1)) }}" class="muted">No items.</td></tr>
+    <tr><td colspan="{{ 6 if d.show_prices else 4 }}" class="muted">No items.</td></tr>
     {% endfor %}
     </tbody>
     {% if d.total is not none %}
@@ -74,7 +71,7 @@
   </table></div>
 
   {% if d.notes %}
-  <h2>{{ d.notes_title or 'Remarks' }}</h2>
+  <h2>Remarks</h2>
   <div class="doc-notes">{% for n in d.notes %}<p>{{ n }}</p>{% endfor %}</div>
   {% endif %}
 

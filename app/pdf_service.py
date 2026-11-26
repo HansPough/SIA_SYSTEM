@@ -119,7 +119,7 @@ def _header(doc, company, st):
     right = [Paragraph(_t(doc["title"]), st["right_b"]),
              Paragraph(_t(doc["doc_no"]), ParagraphStyle("no", parent=st["right_b"], fontSize=12, leading=15)),
              Paragraph("Date: %s" % _t(doc["date"]), st["right"]),
-             Paragraph("Status: %s" % _t(doc["status"]), st["right"])]
+             ] + ([Paragraph("Status: %s" % _t(doc["status"]), st["right"])] if doc.get("status") else [])
     t = Table([[logo, left, right]], colWidths=[26 * mm, CONTENT_W - 26 * mm - 62 * mm, 62 * mm])
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                            ("LINEBELOW", (0, 0), (-1, 0), 1.6, INK),
@@ -194,23 +194,24 @@ def _qty_items_table(doc, st):
     return t
 
 
+def _amount_text(value):
+    """A price or amount for a table cell; a dash when there is none yet (an RFQ with no reply)."""
+    return "–" if value is None else "{:,.2f}".format(float(value or 0))
+
+
 def _items_table(doc, st):
     if doc.get("qty_columns"):
         return _qty_items_table(doc, st)
     prices = doc["show_prices"]
-    fill = doc.get("reply_columns") or []          # blank boxes the other side writes in (RFQ)
-    head = (["Code", "Item", "Qty"] + (["Unit price", "Amount"] if prices else []) + list(fill)
-            + ([] if fill else ["Note"]))
+    head = ["Code", "Item", "Qty"] + (["Unit price", "Amount"] if prices else []) + ["Note"]
     rows = [[Paragraph("<b>%s</b>" % h, st["cell"]) for h in head]]
     for it in doc["lines"]:
         row = [Paragraph(_t(it.get("code")), st["cell"]), Paragraph(_t(it.get("name")), st["cell"]),
                Paragraph(_t(it.get("qty")), st["right"])]
         if prices:
-            row += [Paragraph(_t("{:,.2f}".format(float(it.get("price") or 0))), st["right"]),
-                    Paragraph(_t("{:,.2f}".format(float(it.get("amount") or 0))), st["right"])]
-        row += [""] * len(fill)
-        if not fill:
-            row.append(Paragraph(_t(it.get("note") or ""), st["cell"]))
+            row += [Paragraph(_t(_amount_text(it.get("price"))), st["right"]),
+                    Paragraph(_t(_amount_text(it.get("amount"))), st["right"])]
+        row.append(Paragraph(_t(it.get("note") or ""), st["cell"]))
         rows.append(row)
     if not doc["lines"]:
         rows.append([Paragraph("No items.", st["small"])] + [""] * (len(head) - 1))
@@ -219,10 +220,7 @@ def _items_table(doc, st):
         rows.append(pad + [Paragraph("<b>Total</b>", st["right"]), "",
                            Paragraph("<b>%s</b>" % _t("{:,.2f}".format(float(doc["total"] or 0))), st["right"]), ""])
 
-    if fill:
-        box = 32 * mm
-        widths = [24 * mm, CONTENT_W - 24 * mm - 16 * mm - box * len(fill), 16 * mm] + [box] * len(fill)
-    elif prices:
+    if prices:
         widths = [24 * mm, CONTENT_W - 24 * mm - 14 * mm - 24 * mm - 26 * mm - 30 * mm, 14 * mm, 24 * mm, 26 * mm, 30 * mm]
     else:
         widths = [26 * mm, CONTENT_W - 26 * mm - 18 * mm - 50 * mm, 18 * mm, 50 * mm]
@@ -230,10 +228,6 @@ def _items_table(doc, st):
     style = [("BACKGROUND", (0, 0), (-1, 0), SOFT), ("LINEBELOW", (0, 0), (-1, 0), 0.8, INK),
              ("LINEBELOW", (0, 1), (-1, -1), 0.4, LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
              ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]
-    if fill and doc["lines"]:
-        # ruled boxes to write in, with room for a pen
-        style += [("GRID", (3, 1), (-1, -1), 0.5, LINE), ("TOPPADDING", (0, 1), (-1, -1), 9),
-                  ("BOTTOMPADDING", (0, 1), (-1, -1), 9)]
     if prices and doc.get("total") is not None:
         style.append(("LINEABOVE", (0, -1), (-1, -1), 1.0, INK))
     t.setStyle(TableStyle(style))
@@ -299,11 +293,9 @@ def build_pdf(doc, company="3T Tire Supply"):
                             author=company, subject=doc["title"])
     story = [_header(doc, company, st), Spacer(1, 2)]
     story += _parties_and_meta(doc, st)
-    if doc.get("intro"):
-        story += [Spacer(1, 6), Paragraph(_t(doc["intro"]), st["base"])]
     story += [Paragraph("Items", st["h2"]), _items_table(doc, st)]
     if doc.get("notes"):
-        story += [Paragraph(_t(doc.get("notes_title") or "Remarks"), st["h2"])] + [Paragraph(_t(n), st["base"]) for n in doc["notes"]]
+        story += [Paragraph("Remarks", st["h2"])] + [Paragraph(_t(n), st["base"]) for n in doc["notes"]]
     story += [Spacer(1, 8), KeepTogether([Paragraph("Signatures", st["h2"])] + _signature_block(doc, st))]
     if doc.get("system_note"):
         story += [Spacer(1, 8), Paragraph(_t(doc["system_note"]), st["small"])]

@@ -418,7 +418,7 @@ class RfqQuotationTests(Base):
         self.assertEqual(r.status_code, 302)
         self.assertEqual(self.be.one("SELECT basis FROM purchase_approvals")["basis"], "agreed_price")
 
-    def test_choose_suppliers_puts_one_offer_per_supplier_and_the_qty_in_the_row(self):
+    def test_choose_suppliers_puts_one_offer_per_supplier_and_takes_the_qty_from_the_ref(self):
         self.make_ref()
         ref_id = self.ref_id()
         self.send_rfq(ref_id)
@@ -431,8 +431,8 @@ class RfqQuotationTests(Base):
         self.assertNotIn('id="bulk-offer"', page)
         self.assertNotIn('value="a:%d"' % SUP_A, page)       # quoted it: no second agreed-price radio
         self.assertEqual(page.count('value="q:%d"' % qid), 1)
-        self.assertIn('name="qty_%d"' % rid, page)
-        self.assertIn('value="5"', page)                     # prefilled with the 5 still to order
+        self.assertNotIn('name="qty_%d"' % rid, page)        # the REF already fixes the quantity: no box to retype it
+        self.assertIn('data-qty="5"', page)                  # the 5 still needed is what gets ordered
         self.assertIn("50.00", page)                         # 5 x 10.00 line subtotal
         self.assertIn("1 item &middot; 50.00", page)         # split preview shows the PO total
         self.assertNotIn(">Record quotation</a>", page)      # the extra button is gone
@@ -506,9 +506,11 @@ class RfqDocumentTests(Base):
         page = self.c.get(r.headers["Location"]).get_data(as_text=True)
         self.assertIn("Request for Quotation", page)
         self.assertIn("ANSU 12R22.5", page)
-        self.assertIn("Unit price", page)
-        self.assertIn("Lead time (days)", page)
-        self.assertIn('class="fill"', page)                         # blank boxes for the supplier
+        self.assertIn("Unit price", page)                           # laid out like the PO
+        self.assertIn("Amount", page)
+        self.assertNotIn('class="fill"', page)                      # no blank boxes
+        self.assertNotIn("Lead time (days)", page)
+        self.assertNotIn('class="doc-status"', page)                # no status badge on the document
         self.assertIn("/documents/RFQ/%d.pdf" % rfq_id, page)
         self.assertIn("Prepared by (Warehouse)", page)
         self.assertNotIn("Changed after signing", page)
@@ -571,6 +573,53 @@ class RfqDocumentTests(Base):
         page = self.c.get("/documents/RFQ/%d" % second).get_data(as_text=True)
         self.assertIn("ANSU", page)
         self.assertNotIn("RODEO", page)
+
+    def test_a_suppliers_copy_shows_the_unit_price_amount_and_total_they_quoted(self):
+        ref_id = self.two_item_ref()
+        rfq_id = self.rfq_id()
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7), (B, 10, "20.00", 7)])
+        self.login("whmgr")
+        page = self.c.get("/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_A)).get_data(as_text=True)
+        self.assertIn("10.00", page)
+        self.assertIn("200.00", page)                                # amount: 20 x 10.00
+        self.assertIn("400.00", page)                                # total: 200.00 + 10 x 20.00
+        self.assertNotIn('class="doc-status"', page)
+        self.assertNotIn("Offers ", page)
+        r = self.c.get("/documents/RFQ/%d.pdf?supplier=%d" % (rfq_id, SUP_A))
+        self.assertTrue(r.get_data().startswith(b"%PDF"))
+
+    def test_a_copy_with_no_reply_and_the_internal_copy_show_dashes_not_zero_prices(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        self.login("whmgr")
+        for url in ("/documents/RFQ/%d" % rfq_id, "/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_A)):
+            page = self.c.get(url).get_data(as_text=True)
+            body = page[page.index('class="doc-items'):page.index("</table>")] if 'class="doc-items' in page else page
+            self.assertNotIn("0.00", body, url)                      # nothing quoted yet: no fake 0.00
+            self.assertIn("–", body, url)
+            self.assertEqual(self.c.get(url.replace("/documents/RFQ/%d" % rfq_id, "/documents/RFQ/%d.pdf" % rfq_id)).mimetype,
+                             "application/pdf")
+
+    def test_a_short_offer_and_a_not_offered_item_are_labelled_on_the_copy(self):
+        ref_id = self.two_item_ref()
+        rfq_id = self.rfq_id()
+        self.quote(ref_id, SUP_B, lines=[(A, 8, "12.00", 3)])        # offers 8 of 20 of A, nothing for B
+        self.login("whmgr")
+        page = self.c.get("/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_B)).get_data(as_text=True)
+        self.assertIn("Offers 8 of 20", page)
+        self.assertIn("Not offered", page)
+        self.assertIn("96.00", page)                                 # amount for what is offered: 8 x 12.00
+
+    def test_editing_a_reply_does_not_make_the_signed_rfq_look_changed(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        self.quote(ref_id, SUP_A, lines=[(A, 5, "10.00", 7)])
+        self.login("whmgr")
+        before = self.c.get("/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_A)).get_data(as_text=True)
+        self.quote(ref_id, SUP_A, lines=[(A, 5, "11.50", 7)])
+        self.login("whmgr")
+        after = self.c.get("/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_A)).get_data(as_text=True)
+        self.assertIn("50.00", before)
+        self.assertIn("57.50", after)
+        self.assertNotIn("Changed after signing", after)             # the signature covers what was asked, not the price
 
     def test_an_rfq_from_before_rfq_items_existed_still_opens_and_can_be_signed(self):
         ref_id, rfq_id, _r = self.setup_rfq()
@@ -739,18 +788,23 @@ class SupplierComparisonTests(Base):
         self.quote(ref_id, SUP_B, lines=[(A, 20, "12.00", 3)])
         return ref_id
 
-    def test_offers_are_ranked_by_price_with_a_fastest_label(self):
+    def test_offers_are_laid_out_in_columns_with_a_lowest_price_and_a_fastest_label(self):
         ref_id = self.two_offers()
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
-        self.assertIn("medal medal-1", page)
-        self.assertIn("medal medal-2", page)
-        self.assertIn("Lowest price", page)
+        self.assertEqual(page.count("Lowest price"), 1)              # one label, on the cheapest offer only
+        self.assertNotIn("2nd lowest", page)                         # no ranking beyond that
+        self.assertNotIn("3rd lowest", page)
         self.assertIn("Fastest", page)                               # Sup B: 3 days against 7
         self.assertIn("+2.00", page)                                 # Sup B is 2.00 above the lowest
         self.assertIn('class="offers-head"', page)
-        for heading in ("Unit price", "vs lowest", "Can supply", "Lead time", "Valid until", "Total"):
+        for heading in ("Unit price", "Above lowest", "Can supply", "Lead time", "Valid until", "Amount"):
             self.assertIn(">%s<" % heading, page)
+        for heading in ("Requested", "Still needed"):                # the item's own numbers sit apart from the offers
+            self.assertIn("<dt>%s</dt>" % heading, page)
+        self.assertIn("Selected", page)                              # footer: what is chosen and its subtotal
+        self.assertNotIn("Full quantity", page)                      # said by the Can supply column already
+        self.assertNotIn("Regular supplier", page)
         self.assertLess(page.index("Sup A"), page.index("Sup B"))    # cheapest first
 
     def test_a_single_offer_gets_no_medal(self):
@@ -769,7 +823,6 @@ class SupplierComparisonTests(Base):
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
         self.assertIn("Short by 12", page)
-        self.assertIn("short by 12, the rest stays open", page)
 
     def test_equal_prices_share_a_medal_and_nothing_is_fastest_when_lead_times_match(self):
         from app import purchasing_ops as pur
@@ -777,7 +830,7 @@ class SupplierComparisonTests(Base):
                 {"unit_price": "10.00", "lead": 5, "max_qty": 20, "expired": False, "supplier_name": "Y"},
                 {"unit_price": "15.00", "lead": 5, "max_qty": 20, "expired": False, "supplier_name": "Z"}]
         pur._annotate_offers(opts, 20)
-        self.assertEqual([o["rank"] for o in opts], [1, 1, 2])
+        self.assertEqual([o["rank"] for o in opts], [1, 1, None])    # only the lowest price is marked
         self.assertFalse(any(o["fastest"] for o in opts))
         self.assertEqual(opts[2]["above"], "5.00")
         self.assertEqual(opts[2]["above_pct"], 50)
@@ -790,6 +843,20 @@ class SupplierComparisonTests(Base):
         self.assertEqual([o["supplier_name"] for o in opts], ["New", "Old"])
         self.assertIsNone(opts[1]["rank"])
         self.assertTrue(opts[0]["only_offer"])
+
+    def test_there_is_no_order_quantity_box_and_the_whole_need_is_ordered(self):
+        ref_id = self.two_offers()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        rid = self.line_ids(ref_id)[A]
+        self.assertNotIn('name="qty_%d"' % rid, page)
+        self.assertNotIn(">Order<", page)
+        qa = self.be.one("SELECT id FROM quotations WHERE supplier_id = :s", s=SUP_A)["id"]
+        self.c.post("/purchasing/ref/%d/compare" % ref_id, data={"choice_%d" % rid: "q:%d" % qa})
+        appr = self.be.one("SELECT * FROM purchase_approvals ORDER BY id LIMIT 1")
+        self.login("owner")
+        shown = self.c.get("/purchasing/approvals/%d" % appr["id"]).get_data(as_text=True)
+        self.assertIn(">20<", shown)                                 # the full 20 that the REF asked for
 
     def test_the_page_says_the_owner_decides(self):
         ref_id = self.two_offers()
@@ -811,13 +878,62 @@ class SupplierComparisonTests(Base):
         page = self.c.get("/purchasing/approvals/%d" % aid).get_data(as_text=True)
         self.assertIn("The decision is yours", page)
         self.assertIn("How this compares", page)
-        self.assertIn("2nd lowest", page)                            # Sup B is second on price
-        self.assertIn("Fastest", page)
+        self.assertNotIn("2nd lowest", page)
+        self.assertIn("Fastest", page)                               # Sup B was the faster offer
         self.assertIn("2 offers compared", page)
         self.assertIn("Cheaper offers not chosen", page)
         passed_over = page.split("Cheaper offers not chosen")[1]
         self.assertIn("Sup A", passed_over)                           # the cheaper supplier that was not picked
         self.assertIn("10.00", passed_over)
+
+
+class NotOfferedLineTests(Base):
+    """A supplier that does not offer an item: quantity 0, and no price needed."""
+
+    def post_reply(self, ref_id, rows):
+        """rows: [(item_id, qty, price)] posted in the order of the REF's lines."""
+        ids = self.line_ids(ref_id)
+        self.login("whmgr")
+        return self.c.post("/purchasing/ref/%d/quotation/new" % ref_id, data={
+            "supplier_id": str(SUP_B), "quotation_date": "2026-11-01", "action": "save_quotation",
+            "ref_item_id[]": [str(ids[i]) for i, _q, _p in rows], "qty_offered[]": [str(q) for _i, q, _p in rows],
+            "unit_price[]": [p for _i, _q, p in rows], "lead_time_days[]": ["5"] * len(rows)})
+
+    def two_items(self):
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/new", data={
+            "remarks": "x", "item_id[]": [str(A), str(B)], "qty_requested[]": ["20", "10"],
+            "reason[]": ["below_rop", "below_rop"], "action": "submit_ref"})
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        return ref_id
+
+    def test_a_zero_quantity_line_is_skipped_whether_the_price_is_blank_or_zero(self):
+        for blank_price in ("", "0", "0.00"):
+            self.setUp()
+            ref_id = self.two_items()
+            r = self.post_reply(ref_id, [(A, 20, "12.50"), (B, 0, blank_price)])
+            self.assertEqual(r.status_code, 302, blank_price)
+            saved = self.be.all("SELECT item_id, qty_offered FROM quotation_items")
+            self.assertEqual([(s["item_id"], s["qty_offered"]) for s in saved], [(A, 20)], blank_price)
+
+    def test_a_positive_quantity_still_needs_a_price(self):
+        ref_id = self.two_items()
+        r = self.post_reply(ref_id, [(A, 20, ""), (B, 0, "")])
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("enter the unit price", " ".join(self.flashes(r)))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM quotation_items")["n"], 0)
+
+    def test_the_browser_does_not_block_a_line_that_was_not_offered(self):
+        ref_id = self.two_items()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/quotation/new?supplier_id=%d" % (ref_id, SUP_B)).get_data(as_text=True)
+        self.assertIn('name="unit_price[]"', page)
+        self.assertNotIn("disabled", page.split('id="quote-lines"')[1].split("</table>")[0])   # parallel lists stay aligned
+        self.assertIn("Set its quantity to <strong>0</strong>", page)
+        js = self.c.get("/static/js/app.js").get_data(as_text=True)
+        self.assertIn('removeAttribute("min")', js)
+        self.assertIn("line-off", js)
 
 
 class ApprovalTests(Base):

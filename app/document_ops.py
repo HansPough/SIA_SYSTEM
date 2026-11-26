@@ -6,6 +6,7 @@ the printable page and the PDF share the same data. Signatures live in
 come from the account; a signed line is final).
 """
 import datetime as dt
+from decimal import Decimal
 
 from . import delivery_ops as dop
 from . import inventory_service as inv
@@ -148,16 +149,18 @@ def lifecycle(doc_type, doc_id):
 def _document(doc_type, title, doc_no, status, date, party_from, party_to,
               meta, items, user, doc_id, show_prices=False, total=None, notes=None,
               show_amounts=True, prepared=None, qty_columns=None, qty_totals=None,
-              system_note=None, intro=None, notes_title=None, reply_columns=None,
-              hash_to=None, extra=None):
-    # hash_to: what "To" counts as in the fingerprint when the printed addressee may change
-    # (an RFQ copy addressed to one supplier must not look "changed after signing").
-    doc_hash = signing.content_hash(doc_type, doc_no, party_from, hash_to or party_to, items, total)
+              system_note=None, fingerprint=None, extra=None):
+    # fingerprint: what the signature covers when it must be narrower than what is printed. An RFQ copy
+    # shows one supplier's quoted prices, which change when the reply is edited; the signature covers only
+    # what was asked (items and quantities), so it never looks "changed after signing".
+    fp = fingerprint or {}
+    doc_hash = signing.content_hash(doc_type, doc_no, party_from, fp.get("to", party_to),
+                                    fp.get("items", items), fp.get("total", total))
     doc = {
         "doc_type": doc_type,
         "title": title,
         "doc_no": doc_no,
-        "status": _status_label(doc_type, status),
+        "status": _status_label(doc_type, status) if status else None,   # None: no status badge
         "date": _date(date),
         "party_from": party_from,
         "party_to": party_to,
@@ -175,9 +178,6 @@ def _document(doc_type, title, doc_no, status, date, party_from, party_to,
         "slots": _slot_data(doc_type, doc_id, user, doc_hash),
         "doc_hash": doc_hash,
         "doc_id": doc_id,
-        "intro": intro,                      # a sentence above the items (RFQ: what to quote)
-        "notes_title": notes_title or "Remarks",
-        "reply_columns": reply_columns,      # blank boxes for the other side to fill in (RFQ)
     }
     if extra:
         doc.update(extra)
@@ -241,40 +241,50 @@ def _load_ref(doc_id, user):
 
 
 def _load_rfq(doc_id, user, supplier_id=None):
-    """The RFQ as it goes to suppliers: items and quantities, blank price and lead-time boxes.
+    """The RFQ laid out like the PO: items, unit price, amount, total.
 
-    With supplier_id the copy is addressed to that one supplier and does not name the others
-    (suppliers should not see who else is quoting). Without it, it is the internal copy that
-    lists everyone invited."""
+    With supplier_id the copy is addressed to that one supplier, does not name the others (suppliers
+    should not see who else is quoting) and shows the prices that supplier quoted. Without it, it is the
+    internal copy that lists everyone invited and has no prices (there is more than one to show)."""
     rq = pur.get_rfq(doc_id, user)
     if rq is None:
         return None
-    items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_requested"], "note": ""}
-             for l in rq["items"]]
-    deadline = _date(rq["reply_deadline"])
     chosen = next((s for s in rq["suppliers"] if supplier_id and s["supplier_id"] == supplier_id), None)
+    quote = pur.rfq_supplier_quote(doc_id, chosen["supplier_id"]) if chosen and chosen["quotation_id"] else None
+    items, asked, total = [], [], None
+    for l in rq["items"]:
+        line = {"code": l["item_code"], "name": l["item_name"], "qty": l["qty_requested"],
+                "price": None, "amount": None, "note": ""}
+        asked.append({"code": l["item_code"], "qty": l["qty_requested"]})      # what the signature covers
+        if quote is not None:
+            q = quote.get(l["item_id"])
+            if q is None:
+                line["note"] = "Not offered"
+            else:
+                taken = min(q["qty_offered"], l["qty_requested"])
+                line["price"] = q["unit_price"]
+                line["amount"] = str(pur._amount(taken, q["unit_price"]).quantize(Decimal("0.01")))
+                if q["qty_offered"] < l["qty_requested"]:
+                    line["note"] = "Offers %d of %d" % (q["qty_offered"], l["qty_requested"])
+        items.append(line)
+    if quote is not None:
+        total = str(sum((Decimal(l["amount"]) for l in items if l["amount"] is not None), Decimal("0")).quantize(Decimal("0.01")))
+    deadline = _date(rq["reply_deadline"])
     if chosen:
-        who = chosen["supplier_name"]
         contact = " · ".join(x for x in (chosen.get("contact_person"), chosen.get("email")) if x)
-        party_to = ("To", who + ("  (Attn: %s)" % contact if contact else ""))
+        party_to = ("To", chosen["supplier_name"] + ("  (Attn: %s)" % contact if contact else ""))
         recipients = []
     else:
         party_to = ("To", "Invited suppliers")
         recipients = [("Sent to", ", ".join(s["supplier_name"] for s in rq["suppliers"]) or "–")]
-    meta = [("REF no.", rq["ref_no"]),
-            ("Reply by", deadline or "As soon as possible"),
-            ("Deliver to", "%s — %s" % (rq["warehouse"], rq["warehouse_name"])),
+    meta = [("REF no.", rq["ref_no"]), ("Reply by", deadline or "–"),
             ("Created by", rq["created_by_name"])] + recipients
-    intro = ("Please quote your best unit price and lead time for the items below%s. "
-             "Reply by email to the person named on this request."
-             % (", and reply by %s" % deadline if deadline else ""))
     return _document(
-        "RFQ", TITLES["RFQ"], rq["rfq_no"], rq["status"], rq.get("sent_at") or rq.get("created_at"),
+        "RFQ", TITLES["RFQ"], rq["rfq_no"], None, rq.get("sent_at") or rq.get("created_at"),
         ("From", "Warehouse %s — %s" % (rq["warehouse"], rq["warehouse_name"])),
-        party_to, meta, items, user, doc_id,
-        notes=[rq.get("terms")], notes_title="Terms", intro=intro,
-        reply_columns=["Unit price", "Lead time (days)"],
-        hash_to=("To", "Suppliers"),
+        party_to, meta, items, user, doc_id, show_prices=True, total=total,
+        notes=[rq.get("terms")],
+        fingerprint={"to": ("To", "Suppliers"), "items": asked, "total": None},
         extra={"ref_id": rq["ref_id"], "supplier_id": chosen["supplier_id"] if chosen else None,
                "supplier_name": chosen["supplier_name"] if chosen else None})
 

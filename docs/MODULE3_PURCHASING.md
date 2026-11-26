@@ -65,14 +65,16 @@ restock alert ──► REF (draft ─► submitted)
 
 The screen shows one card per item with every offer in aligned columns: unit price, how far above the lowest, quantity it can supply, lead time, valid until, and the total for the quantity needed.
 
-* **Medals** (`purchasing_ops._annotate_offers`): gold, silver, bronze by unit price. Equal prices share a medal. Only given when there are at least two different prices.
-* **Labels**: *Fastest* (shortest stated lead time, only when lead times differ), *Full quantity* or *Short by N*, *Agreed price*, *Regular supplier*, *Only offer*, *Expired*.
-* Medals are display only. They never change which offer is pre-selected (the cheapest offer that covers the full quantity).
+* **One flat "Lowest price" label** (`purchasing_ops._annotate_offers`) on the cheapest offer, given only when there are at least two different prices. There is no 2nd or 3rd place and no gradients.
+* **Other labels** appear only when they tell you something the columns do not: *Fastest* (shortest stated lead time, only when lead times differ), *Agreed price*, *Short by N*, *Expired*.
+* **No order-quantity box.** The REF already fixes the quantity: each supplier is ordered everything still needed, or what it can cover. A line left open stays open for another round.
+* Each item card has three parts: its own numbers (requested, ordered, dropped, still needed), the offers table, and a footer with the selected supplier and subtotal.
+* The labels are display only. They never change which offer is pre-selected (the cheapest offer that covers the full quantity).
 * The owner's approval screen shows the same medal for each chosen price, how many offers were compared, and any **cheaper offers that were not chosen**.
 
 ## RFQ document and button standard (migration 020)
 
-* **The RFQ is a document.** *Sign & create RFQ* signs it (Prepared by, warehouse manager), freezes the items it asks about in `rfq_items` (a later round lists only what was still open) and opens the RFQ page at `/purchasing/ref/<id>/rfq/<rfq_id>`. The page shows the document (items with blank **Unit price** and **Lead time** boxes, reply-by date, terms), a **Suppliers** tracker (copy, PDF, record reply, replied or waiting) and the lifecycle. `/documents/RFQ/<id>` and `.pdf` work like every other document.
+* **The RFQ is a document.** *Sign & create RFQ* signs it (Prepared by, warehouse manager), freezes the items it asks about in `rfq_items` (a later round lists only what was still open) and opens the RFQ page at `/purchasing/ref/<id>/rfq/<rfq_id>`. The document is laid out like the PO (items, **Unit price**, **Amount**, total) with no status badge. A supplier's copy shows the prices that supplier quoted; the internal copy shows dashes. The page also has a **Suppliers** tracker (copy, PDF, record reply, replied or waiting) and the lifecycle. `/documents/RFQ/<id>` and `.pdf` work like every other document.
 * **One copy per supplier.** `?supplier=<id>` addresses the copy to that supplier and does not name the others; without it the copy is internal and lists everyone invited. The addressee is not part of the content fingerprint, so a supplier copy never shows "changed after signing".
 * **Older RFQs.** Run `database/migrations/020_rfq_document.sql` once (it also allows `RFQ` in the `document_signatures` check). It fills `rfq_items` best-effort: the items each RFQ's suppliers quoted, else every item of the REF. An RFQ with no `rfq_items` rows falls back to the REF's items, and a manager can sign it from its page.
 * **REF page.** A six-step strip (REF, RFQ, Quotes, Approval, Purchase order, Receiving) with one *Next:* sentence (`purchasing_ops.ref_flow`). Buttons appear once, in the bottom bar: Cancel on the left, other actions, the one main action, Back last.

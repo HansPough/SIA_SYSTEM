@@ -42,6 +42,7 @@
 {% if data.supplier_prices.get(selected) %}
 <p class="muted">“agreed price” marks a price filled from this supplier's agreed price list, not from this reply.</p>
 {% endif %}
+<p class="muted">Did the supplier not offer an item? Set its quantity to <strong>0</strong> and leave the price empty. That line is skipped.</p>
 <div class="table-wrap"><table class="data" id="quote-lines">
 <thead><tr><th>Item</th><th class="num">Qty requested</th><th>Qty offered</th><th>Unit price</th><th>Lead time (days)</th></tr></thead>
 <tbody>

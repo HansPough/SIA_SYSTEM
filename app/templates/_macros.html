@@ -62,20 +62,18 @@
 {#- A small icon for a button: {{ m.icon('plus') }}New REF. Icons live in the sprite at the top of base.html. -#}
 {% macro icon(name) -%}<svg class="ico" aria-hidden="true"><use href="#i-{{ name }}"/></svg>{%- endmacro %}
 
-{#- Gold / silver / bronze for the cheapest offers on a line. rank comes from purchasing_ops._annotate_offers. -#}
+{#- A flat "Lowest price" label on the cheapest offer for a line (rank 1 from purchasing_ops._annotate_offers). -#}
 {% macro medal(rank) -%}
-{% if rank in (1, 2, 3) %}<span class="medal medal-{{ rank }}" title="Ranked by unit price among the offers for this item">{{ icon('medal') }}{{ ['Lowest price', '2nd lowest', '3rd lowest'][rank - 1] }}</span>{% endif %}
+{% if rank == 1 %}<span class="medal" title="Lowest unit price among the offers for this item">{{ icon('medal') }}Lowest price</span>{% endif %}
 {%- endmacro %}
 
-{#- Everything worth knowing about one offer, as small labels: medal, fastest, basis, coverage. -#}
+{#- Only what is worth noticing about an offer. Things the columns already show (quantity it can
+    supply, regular supplier) are not repeated here. -#}
 {% macro offer_chips(o) -%}
 {{ medal(o.rank) }}
-{%- if o.only_offer %}<span class="chip">Only offer</span>{% endif -%}
 {%- if o.fastest %}<span class="chip chip-fast">{{ icon('bolt') }}Fastest</span>{% endif -%}
-{%- if o.kind == 'agreed_price' %}<span class="chip">Agreed price</span>{% elif o.regular %}<span class="chip">Regular supplier</span>{% endif -%}
-{%- if o.expired %}<span class="chip chip-warn">Expired</span>
-{%- elif o.covers %}<span class="chip chip-ok">Full quantity</span>
-{%- else %}<span class="chip chip-warn">Short by {{ o.short }}</span>{% endif %}
+{%- if o.kind == 'agreed_price' %}<span class="chip">Agreed price</span>{% endif -%}
+{%- if o.expired %}<span class="chip chip-warn">Expired</span>{% elif not o.covers %}<span class="chip chip-warn">Short by {{ o.short }}</span>{% endif %}
 {%- endmacro %}
 
 {#- "Where am I?" strip for a document that goes through several steps (REF). flow comes from

@@ -25,32 +25,26 @@
 {% endif %}
 <div class="note">
   <strong>You recommend, the owner decides.</strong> Pick a supplier for each item. Nothing is ordered until the owner
-  approves it, and each approved supplier then gets one purchase order.
-  {% if data.has_medals %}<span class="muted">Medals rank the unit prices for each item: {{ m.medal(1) }} {{ m.medal(2) }} {{ m.medal(3) }}</span>{% endif %}
+  approves it, and each approved supplier then gets one purchase order for the quantity still needed.
 </div>
 
 {% for l in data.lines %}
-<section class="item-card" data-item-row data-open="{{ l.open }}">
+<section class="item-card" data-item-row>
   <header class="item-card-head">
-    <div class="item-title">
-      <h3>{{ l.item_name }} <small class="muted">{{ l.item_code }}</small></h3>
-      <p class="item-need"><span class="need-pill">Need {{ l.open }}</span>
-        <span class="muted">requested {{ l.qty_requested }}{% if l.on_po %} &middot; ordered {{ l.on_po }}{% endif %}{% if l.qty_dropped %} &middot; dropped {{ l.qty_dropped }}{% endif %}</span></p>
-    </div>
-    <div class="item-order qty-cell">
-      <label for="qty_{{ l.ref_item_id }}">Order</label>
-      <input type="number" min="1" max="{{ l.qty_default }}" id="qty_{{ l.ref_item_id }}" name="qty_{{ l.ref_item_id }}"
-             value="{{ l.qty_default }}" {{ 'disabled' if l.default == 'open' }}>
-      <span class="muted">of {{ l.open }}</span>
-      <span class="item-subtotal">Subtotal <strong class="subtotal" data-subtotal>{% if l.subtotal is not none %}{{ l.subtotal|money }}{% else %}&ndash;{% endif %}</strong></span>
-    </div>
+    <h3>{{ l.item_name }} <small class="muted">{{ l.item_code }}</small></h3>
+    <dl class="item-stats">
+      <div><dt>Requested</dt><dd>{{ l.qty_requested }}</dd></div>
+      {% if l.on_po %}<div><dt>Ordered</dt><dd>{{ l.on_po }}</dd></div>{% endif %}
+      {% if l.qty_dropped %}<div><dt>Dropped</dt><dd>{{ l.qty_dropped }}</dd></div>{% endif %}
+      <div class="stat-need"><dt>Still needed</dt><dd>{{ l.open }}</dd></div>
+    </dl>
   </header>
 
   <div class="offers" role="radiogroup" aria-label="Offers for {{ l.item_name }}">
     {% if l.options %}
     <div class="offers-head" aria-hidden="true">
-      <span></span><span>Supplier</span><span class="num">Unit price</span><span class="num">vs lowest</span>
-      <span class="num">Can supply</span><span class="num">Lead time</span><span>Valid until</span><span class="num">Total</span>
+      <span></span><span>Supplier</span><span class="num">Unit price</span><span class="num">Above lowest</span>
+      <span class="num">Can supply</span><span class="num">Lead time</span><span>Valid until</span><span class="num">Amount</span>
     </div>
     {% endif %}
     {% for o in l.options %}
@@ -63,11 +57,11 @@
              {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
       <span class="offer-who"><strong>{{ o.supplier_name }}</strong><span class="chips">{{ m.offer_chips(o) }}</span></span>
       <span class="num" data-label="Unit price"><strong>{{ o.unit_price|money }}</strong></span>
-      <span class="num" data-label="vs lowest">{% if o.above %}+{{ o.above|money }} <small>({{ o.above_pct }}%)</small>{% elif o.rank == 1 %}<span class="ok-text">Lowest</span>{% else %}&ndash;{% endif %}</span>
-      <span class="num" data-label="Can supply">{{ o.max_qty }}{% if not o.covers %} <small>short by {{ o.short }}, the rest stays open</small>{% endif %}</span>
+      <span class="num" data-label="Above lowest">{% if o.above %}+{{ o.above|money }} <small>({{ o.above_pct }}%)</small>{% else %}&ndash;{% endif %}</span>
+      <span class="num" data-label="Can supply">{{ o.max_qty }}</span>
       <span class="num" data-label="Lead time">{% if o.lead is not none %}{{ o.lead }} day{{ 's' if o.lead != 1 }}{% else %}&ndash;{% endif %}</span>
       <span data-label="Valid until">{{ o.valid_until or '–' }}</span>
-      <span class="num" data-label="Total"><strong>{{ o.total|money }}</strong></span>
+      <span class="num" data-label="Amount"><strong>{{ o.total|money }}</strong></span>
     </label>
     {% else %}
     <p class="offers-empty muted">No supplier has quoted this item yet.
@@ -85,6 +79,13 @@
         <span class="muted">ask more suppliers, or order it later</span></span>
     </label>
   </div>
+
+  <footer class="item-card-foot">
+    <span class="foot-label">Selected</span>
+    <strong data-selected>&ndash;</strong>
+    <span class="foot-calc" data-calc></span>
+    <span class="foot-total">Subtotal <strong class="subtotal" data-subtotal>{% if l.subtotal is not none %}{{ l.subtotal|money }}{% else %}&ndash;{% endif %}</strong></span>
+  </footer>
 </section>
 {% endfor %}
 
@@ -143,35 +144,29 @@
     return li;
   }
   function applyOption(row, radio) {
-    var qty = row.querySelector("input[type=number]");
     radio.checked = true;
-    if (!qty) { return; }
-    if (radio.value === "open") {
-      qty.disabled = true;
-    } else {
-      qty.disabled = false;
-      qty.value = radio.getAttribute("data-qty");
-      qty.max = radio.getAttribute("data-qty");
-    }
   }
   function refresh() {
     var groups = {}, order = [], open = 0;
     form.querySelectorAll("[data-item-row]").forEach(function (row) {
       var checked = row.querySelector("input[type=radio]:checked");
-      var qty = row.querySelector("input[type=number]");
       var cell = row.querySelector("[data-subtotal]");
+      var who = row.querySelector("[data-selected]");
+      var calc = row.querySelector("[data-calc]");
       if (!checked || checked.value === "open") {
         open += 1;
-        if (qty) { qty.disabled = true; }
         if (cell) { cell.textContent = "\u2013"; }
+        if (who) { who.textContent = "Keep open"; }
+        if (calc) { calc.textContent = ""; }
         return;
       }
-      if (qty) { qty.disabled = false; }
-      var maxQty = parseInt(checked.getAttribute("data-qty"), 10) || 0;
-      var orderQty = qty && qty.value !== "" ? parseInt(qty.value, 10) : maxQty;
+      // The quantity is the REF's: everything still needed, or what the supplier can cover.
+      var orderQty = parseInt(checked.getAttribute("data-qty"), 10) || 0;
       var price = parseFloat(checked.getAttribute("data-price")) || 0;
       var amount = orderQty * price;
       if (cell) { cell.textContent = money(amount); }
+      if (who) { who.textContent = checked.getAttribute("data-supplier"); }
+      if (calc) { calc.textContent = orderQty + " \u00d7 " + money(price); }
       var key = checked.getAttribute("data-supplier-id");
       var basis = checked.getAttribute("data-basis");
       if (!groups[key]) {
