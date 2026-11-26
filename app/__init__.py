@@ -146,12 +146,12 @@ def create_app():
         return out
 
     @app.template_global("load_document")
-    def load_document(doc_type, doc_id):
+    def load_document(doc_type, doc_id, supplier_id=None):
         """The printable document for a form, or None. Every form page shows its document first."""
         from . import document_ops as docs
         from .session_user import current_user
         try:
-            return docs.load(doc_type, doc_id, current_user())
+            return docs.load(doc_type, doc_id, current_user(), supplier_id=supplier_id)
         except Exception:
             app.logger.warning("Document %s %s unavailable", doc_type, doc_id, exc_info=True)
             return None

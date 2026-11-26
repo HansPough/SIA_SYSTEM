@@ -372,7 +372,7 @@ class DocumentButtonStandardTests(Base):
         self.chain()
         self.login("owner")
         html = page(self.c.get("/purchasing/po/1"))
-        self.assertRegex(html, r'<a class="btn small" href="/documents/PO/1\.pdf" download>Download PDF</a>')
+        self.assertRegex(html, r'<a class="btn small" href="/documents/PO/1\.pdf" download>(<svg[^>]*>.*?</svg>)?Download PDF</a>')
         r = self.c.get("/documents/PO/1.pdf")
         self.assertEqual(r.mimetype, "application/pdf")
         self.assertIn("PO-", r.headers["Content-Disposition"])

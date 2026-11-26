@@ -21,6 +21,7 @@ SLOTS = signing.SLOTS
 TITLES = {
     "RF": "Requisition Form",
     "REF": "Replenishment Form",
+    "RFQ": "Request for Quotation",
     "PO": "Purchase Order",
     "TS": "Transfer Slip",
     "AR": "Acknowledgment Receipt",
@@ -76,6 +77,7 @@ def _slot_data(doc_type, doc_id, user, doc_hash):
 LIFECYCLE_TABLES = {
     "RF": "requisitions",
     "REF": "replenishments",
+    "RFQ": "rfqs",
     "PO": "purchase_orders",
     "TS": "transfer_slips",
     "AR": "acknowledgment_receipts",
@@ -146,9 +148,12 @@ def lifecycle(doc_type, doc_id):
 def _document(doc_type, title, doc_no, status, date, party_from, party_to,
               meta, items, user, doc_id, show_prices=False, total=None, notes=None,
               show_amounts=True, prepared=None, qty_columns=None, qty_totals=None,
-              system_note=None):
-    doc_hash = signing.content_hash(doc_type, doc_no, party_from, party_to, items, total)
-    return {
+              system_note=None, intro=None, notes_title=None, reply_columns=None,
+              hash_to=None, extra=None):
+    # hash_to: what "To" counts as in the fingerprint when the printed addressee may change
+    # (an RFQ copy addressed to one supplier must not look "changed after signing").
+    doc_hash = signing.content_hash(doc_type, doc_no, party_from, hash_to or party_to, items, total)
+    doc = {
         "doc_type": doc_type,
         "title": title,
         "doc_no": doc_no,
@@ -170,7 +175,13 @@ def _document(doc_type, title, doc_no, status, date, party_from, party_to,
         "slots": _slot_data(doc_type, doc_id, user, doc_hash),
         "doc_hash": doc_hash,
         "doc_id": doc_id,
+        "intro": intro,                      # a sentence above the items (RFQ: what to quote)
+        "notes_title": notes_title or "Remarks",
+        "reply_columns": reply_columns,      # blank boxes for the other side to fill in (RFQ)
     }
+    if extra:
+        doc.update(extra)
+    return doc
 
 
 def _qty_totals(lines, keys):
@@ -227,6 +238,45 @@ def _load_ref(doc_id, user):
         [("Warehouse", "%s — %s" % (head["warehouse"], head["warehouse_name"])),
          ("Created by", head["created_by_name"])],
         items, user, doc_id, notes=[head.get("remarks")])
+
+
+def _load_rfq(doc_id, user, supplier_id=None):
+    """The RFQ as it goes to suppliers: items and quantities, blank price and lead-time boxes.
+
+    With supplier_id the copy is addressed to that one supplier and does not name the others
+    (suppliers should not see who else is quoting). Without it, it is the internal copy that
+    lists everyone invited."""
+    rq = pur.get_rfq(doc_id, user)
+    if rq is None:
+        return None
+    items = [{"code": l["item_code"], "name": l["item_name"], "qty": l["qty_requested"], "note": ""}
+             for l in rq["items"]]
+    deadline = _date(rq["reply_deadline"])
+    chosen = next((s for s in rq["suppliers"] if supplier_id and s["supplier_id"] == supplier_id), None)
+    if chosen:
+        who = chosen["supplier_name"]
+        contact = " · ".join(x for x in (chosen.get("contact_person"), chosen.get("email")) if x)
+        party_to = ("To", who + ("  (Attn: %s)" % contact if contact else ""))
+        recipients = []
+    else:
+        party_to = ("To", "Invited suppliers")
+        recipients = [("Sent to", ", ".join(s["supplier_name"] for s in rq["suppliers"]) or "–")]
+    meta = [("REF no.", rq["ref_no"]),
+            ("Reply by", deadline or "As soon as possible"),
+            ("Deliver to", "%s — %s" % (rq["warehouse"], rq["warehouse_name"])),
+            ("Created by", rq["created_by_name"])] + recipients
+    intro = ("Please quote your best unit price and lead time for the items below%s. "
+             "Reply by email to the person named on this request."
+             % (", and reply by %s" % deadline if deadline else ""))
+    return _document(
+        "RFQ", TITLES["RFQ"], rq["rfq_no"], rq["status"], rq.get("sent_at") or rq.get("created_at"),
+        ("From", "Warehouse %s — %s" % (rq["warehouse"], rq["warehouse_name"])),
+        party_to, meta, items, user, doc_id,
+        notes=[rq.get("terms")], notes_title="Terms", intro=intro,
+        reply_columns=["Unit price", "Lead time (days)"],
+        hash_to=("To", "Suppliers"),
+        extra={"ref_id": rq["ref_id"], "supplier_id": chosen["supplier_id"] if chosen else None,
+               "supplier_name": chosen["supplier_name"] if chosen else None})
 
 
 def _load_po(doc_id, user):
@@ -389,15 +439,18 @@ def _load_dr(doc_id, user):
         items, user, doc_id, notes=[dr.get("follow_up_notes")])
 
 
-LOADERS = {"RF": _load_rf, "REF": _load_ref, "PO": _load_po, "TS": _load_ts,
+LOADERS = {"RF": _load_rf, "REF": _load_ref, "RFQ": _load_rfq, "PO": _load_po, "TS": _load_ts,
            "AR": _load_ar, "RM": _load_rm, "DR": _load_dr}
 
 
-def load(doc_type, doc_id, user):
+def load(doc_type, doc_id, user, supplier_id=None):
+    """supplier_id only matters for an RFQ (the copy addressed to one supplier)."""
     doc_type = (doc_type or "").upper()
     loader = LOADERS.get(doc_type)
     if loader is None:
         return None
+    if doc_type == "RFQ":
+        return loader(doc_id, user, supplier_id=supplier_id)
     return loader(doc_id, user)
 
 

@@ -201,7 +201,8 @@ def ref_detail(ref_id):
                 flash("%s signed and submitted." % ref_no, "success")
         return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
     can_cancel, _why = pur.can_cancel(user, ref)
-    return render_template("purchasing/ref_detail.html", ref=ref, can_cancel=can_cancel)
+    return render_template("purchasing/ref_detail.html", ref=ref, can_cancel=can_cancel,
+                           flow=pur.ref_flow(ref))
 
 
 @bp.route("/ref/<int:ref_id>/cancel", methods=["GET", "POST"])
@@ -243,17 +244,31 @@ def rfq_new(ref_id):
         return redirect(url_for("purchasing.ref_list"))
     if request.method == "POST":
         try:
-            rfq_no, n = pur.create_rfq(user, ref_id, request.form.getlist("supplier_ids[]"),
-                                       request.form.get("reply_deadline"), request.form.get("terms"))
+            rfq_no, n, rfq_id = pur.create_rfq(user, ref_id, request.form.getlist("supplier_ids[]"),
+                                               request.form.get("reply_deadline"), request.form.get("terms"))
+            docs.sign_on_action(user, "RFQ", rfq_id, "prepared_by")     # signed in the same save
             inv.commit()
         except InventoryError as e:
             inv.rollback()
             flash(str(e), "error")
         else:
-            flash("%s recorded as sent to %d supplier(s)." % (rfq_no, n), "success")
-            return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
+            flash("%s signed and created for %d supplier%s. Download or print it to send."
+                  % (rfq_no, n, "" if n == 1 else "s"), "success")
+            return redirect(url_for("purchasing.rfq_detail", ref_id=ref_id, rfq_id=rfq_id))
     return render_template("purchasing/rfq_new.html", data=data, f=request.form,
                            next_no=inv.peek_doc_no("RFQ"))
+
+
+@bp.route("/ref/<int:ref_id>/rfq/<int:rfq_id>")
+@roles_required("warehouse_manager", "owner")
+def rfq_detail(ref_id, rfq_id):
+    """The RFQ document first; below it who was asked, who replied and what to do next."""
+    user = current_user()
+    rfq = pur.get_rfq(rfq_id, user)
+    if rfq is None or rfq["ref_id"] != ref_id:
+        return render_template("404.html"), 404
+    return render_template("purchasing/rfq_detail.html", rfq=rfq,
+                           supplier_id=request.args.get("supplier", type=int))
 
 
 @bp.route("/ref/<int:ref_id>/quotation/new", methods=["GET", "POST"])
@@ -281,6 +296,16 @@ def quotation_new(ref_id):
             flash(str(e), "error")
         else:
             flash("Quotation from %s saved." % supplier_name, "success")
+            if request.form.get("action") == "save_and_next":
+                try:
+                    done = int(request.form.get("supplier_id"))
+                except (TypeError, ValueError):
+                    done = 0
+                nxt = pur.next_supplier_to_quote(ref_id, done)
+                if nxt:
+                    return redirect(url_for("purchasing.quotation_new", ref_id=ref_id, supplier_id=nxt))
+                flash("Every supplier on this RFQ has replied. Choose suppliers when you are ready.", "info")
+                return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
             return redirect(url_for("purchasing.quotation_new", ref_id=ref_id,
                                     supplier_id=request.form.get("supplier_id")))
     return render_template("purchasing/quotation_new.html", data=data, f=request.form)

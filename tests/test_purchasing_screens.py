@@ -426,7 +426,7 @@ class RfqQuotationTests(Base):
         self.assertIn(">Send for approval</button>", page)
         self.assertIn(">Back</a>", page)
 
-    def test_the_ref_page_puts_the_next_steps_in_the_header_and_renames_drop(self):
+    def test_the_ref_page_shows_each_next_step_once_and_renames_drop(self):
         self.make_ref()
         ref_id = self.ref_id()
         self.send_rfq(ref_id)
@@ -434,12 +434,186 @@ class RfqQuotationTests(Base):
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
         head = page[page.index('<div class="page-head no-print">'):page.index("<h2>Progress</h2>")]
+        self.assertNotIn('class="btn', head.split('<div class="doc-split">')[0])   # no buttons above the document
+        bar = page[page.rindex('<div class="actions">'):]
         for label in ("Record quotation", "Choose suppliers", "Ask more suppliers"):
-            self.assertIn(">%s</a>" % label, head)
+            self.assertEqual(page.count(">%s</a>" % label), 1, label)             # one place, not two
+            self.assertIn(">%s</a>" % label, bar)
         self.assertIn('placeholder="Reason to drop..."', page)
         self.assertIn(">Drop</button>", page)
         self.assertNotIn("why give up", page)
         self.assertNotIn(">Give up</button>", page)
+
+
+class RfqDocumentTests(Base):
+    """The RFQ is a real document: items, signature, PDF, one copy per supplier."""
+
+    def rfq_id(self):
+        return self.be.one("SELECT id FROM rfqs ORDER BY id DESC LIMIT 1")["id"]
+
+    def two_item_ref(self, qa=20, qb=10):
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/new", data={
+            "remarks": "split", "item_id[]": [str(A), str(B)], "qty_requested[]": [str(qa), str(qb)],
+            "reason[]": ["below_rop", "below_rop"], "action": "submit_ref"})
+        self.send_rfq(self.ref_id())
+        return self.ref_id()
+
+    def qid(self, supplier):
+        return self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)["id"]
+
+    def choose(self, ref_id, **choices):
+        ids = self.line_ids(ref_id)
+        data = {}
+        for item, c in choices.items():
+            data["choice_%d" % ids[int(item)]] = c
+            data["qty_%d" % ids[int(item)]] = ""
+        self.login("whmgr")
+        return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data, follow_redirects=True)
+
+    def approve(self):
+        self.login("owner")
+        return self.c.post("/purchasing/approvals/%d" % self.approval_id(), data={"decision": "approve", "remarks": "ok"})
+
+    def setup_rfq(self, suppliers=(SUP_A, SUP_B)):
+        self.make_ref()
+        ref_id = self.ref_id()
+        r = self.send_rfq(ref_id, suppliers=suppliers)
+        return ref_id, self.rfq_id(), r
+
+    def test_creating_an_rfq_signs_it_freezes_its_items_and_opens_its_page(self):
+        ref_id, rfq_id, r = self.setup_rfq()
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r.headers["Location"].endswith("/purchasing/ref/%d/rfq/%d" % (ref_id, rfq_id)))
+        sig = self.be.one("SELECT * FROM document_signatures WHERE doc_type = 'RFQ'")
+        self.assertEqual((sig["slot"], sig["signer_name"], sig["signer_role"]),
+                         ("prepared_by", "whmgr", "warehouse_manager"))
+        items = self.be.all("SELECT * FROM rfq_items WHERE rfq_id = :r", r=rfq_id)
+        self.assertEqual([(i["item_id"], i["qty_requested"]) for i in items], [(A, 5)])
+        page = self.c.get(r.headers["Location"]).get_data(as_text=True)
+        self.assertIn("Request for Quotation", page)
+        self.assertIn("ANSU 12R22.5", page)
+        self.assertIn("Unit price", page)
+        self.assertIn("Lead time (days)", page)
+        self.assertIn('class="fill"', page)                         # blank boxes for the supplier
+        self.assertIn("/documents/RFQ/%d.pdf" % rfq_id, page)
+        self.assertIn("Prepared by (Warehouse)", page)
+        self.assertNotIn("Changed after signing", page)
+
+    def test_the_rfq_pdf_is_a_pdf_and_a_supplier_copy_hides_the_other_suppliers(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        r = self.c.get("/documents/RFQ/%d.pdf" % rfq_id)
+        self.assertEqual(r.mimetype, "application/pdf")
+        self.assertTrue(r.get_data().startswith(b"%PDF"))
+        r = self.c.get("/documents/RFQ/%d.pdf?supplier=%d" % (rfq_id, SUP_B))
+        self.assertEqual(r.mimetype, "application/pdf")
+        self.assertIn("Sup-B", r.headers["Content-Disposition"])
+        internal = self.c.get("/documents/RFQ/%d" % rfq_id).get_data(as_text=True)
+        self.assertIn("Sup A, Sup B", internal)                      # internal copy lists everyone
+        copy = self.c.get("/documents/RFQ/%d?supplier=%d" % (rfq_id, SUP_B)).get_data(as_text=True)
+        self.assertIn("Sup B", copy)
+        self.assertIn("Attn: Ben", copy)
+        self.assertNotIn("Sup A", copy)                              # competitors are not named
+        self.assertNotIn("Changed after signing", copy)             # a new addressee is not a change
+
+    def test_the_rfq_page_tracks_replies_and_links_each_supplier_copy(self):
+        ref_id, rfq_id, r = self.setup_rfq()
+        url = r.headers["Location"]
+        page = self.c.get(url).get_data(as_text=True)
+        self.assertIn("0 of 2 so far", page)
+        self.assertIn("supplier=%d" % SUP_A, page)
+        self.assertIn("Record reply", page)
+        self.quote(ref_id, SUP_A)
+        self.login("whmgr")
+        page = self.c.get(url).get_data(as_text=True)
+        self.assertIn("1 of 2 so far", page)
+        self.assertIn("Edit reply", page)
+        self.assertIn("50.00", page)                                 # what Sup A quoted
+
+    def test_only_this_warehouse_and_the_owner_can_see_an_rfq(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        self.login("owner")
+        self.assertEqual(self.c.get("/documents/RFQ/%d" % rfq_id).status_code, 200)
+        self.assertEqual(self.c.get("/purchasing/ref/%d/rfq/%d" % (ref_id, rfq_id)).status_code, 200)
+        self.login("shopmgr")
+        self.assertEqual(self.c.get("/documents/RFQ/%d" % rfq_id).status_code, 404)
+        self.assertIn(self.c.get("/purchasing/ref/%d/rfq/%d" % (ref_id, rfq_id)).status_code, (302, 403))
+        self.login("whmgr")
+        self.assertEqual(self.c.get("/purchasing/ref/%d/rfq/%d" % (ref_id + 50, rfq_id)).status_code, 404)
+
+    def test_a_later_round_lists_only_the_items_that_were_still_open(self):
+        ref_id = self.two_item_ref()
+        first = self.rfq_id()
+        self.quote(ref_id, SUP_A, lines=[(B, 10, "20.00", 5)])
+        self.choose(ref_id, **{str(A): "open", str(B): "q:%d" % self.qid(SUP_A)})
+        self.approve()
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/%d/rfq/new" % ref_id, data={"supplier_ids[]": [str(SUP_B)]})
+        second = self.rfq_id()
+        self.assertNotEqual(first, second)
+        got = lambda rid: sorted(r["item_id"] for r in self.be.all(
+            "SELECT item_id FROM rfq_items WHERE rfq_id = :r", r=rid))
+        self.assertEqual(got(first), [A, B])
+        self.assertEqual(got(second), [A])
+        page = self.c.get("/documents/RFQ/%d" % second).get_data(as_text=True)
+        self.assertIn("ANSU", page)
+        self.assertNotIn("RODEO", page)
+
+    def test_an_rfq_from_before_rfq_items_existed_still_opens_and_can_be_signed(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        self.be.execute("DELETE FROM rfq_items")
+        self.be.execute("DELETE FROM document_signatures")
+        self.be.commit()
+        self.login("whmgr")
+        page = self.c.get("/documents/RFQ/%d" % rfq_id).get_data(as_text=True)
+        self.assertIn("ANSU", page)                                  # falls back to the REF's items
+        self.assertIn("Not signed yet", page)
+        r = self.c.post("/documents/RFQ/%d/sign" % rfq_id, data={"slot": "prepared_by"}, follow_redirects=True)
+        self.assertIn("Signed: Prepared by (Warehouse)", r.get_data(as_text=True))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM document_signatures")["n"], 1)
+
+    def test_save_and_next_goes_to_the_next_supplier_that_has_not_replied(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        ids = self.line_ids(ref_id)
+        data = {"supplier_id": str(SUP_A), "quotation_date": "2026-11-01", "action": "save_and_next",
+                "ref_item_id[]": [str(ids[A])], "qty_offered[]": ["5"], "unit_price[]": ["10.00"],
+                "lead_time_days[]": ["7"]}
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/%d/quotation/new" % ref_id, data=data)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("supplier_id=%d" % SUP_B, r.headers["Location"])
+        data.update(supplier_id=str(SUP_B))
+        r = self.c.post("/purchasing/ref/%d/quotation/new" % ref_id, data=data, follow_redirects=True)
+        page = r.get_data(as_text=True)
+        self.assertIn("Every supplier on this RFQ has replied", page)
+        self.assertIn("Replenishment REF-", page)                    # ended on the REF page
+
+    def test_the_ref_page_has_a_stepper_and_links_to_the_rfq_document(self):
+        ref_id, rfq_id, _r = self.setup_rfq()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn('class="stepper"', page)
+        self.assertIn('<li class="step current" aria-current="step"><span>Quotes</span></li>', page)
+        self.assertIn("/purchasing/ref/%d/rfq/%d" % (ref_id, rfq_id), page)
+        self.assertIn("/documents/RFQ/%d.pdf" % rfq_id, page)
+        self.assertEqual(page.count("Next:"), 1)
+
+    def test_flow_steps_follow_the_ref_status(self):
+        from app import purchasing_ops as pur
+        base = {"pos": [], "rfq": None, "rfq_rows": [], "has_open": True}
+        state = lambda status, **kw: [s["state"] for s in pur.ref_flow(dict(base, status=status, **kw))["steps"]]
+        self.assertEqual(state("draft")[0], "current")
+        self.assertEqual(state("submitted")[:3], ["done", "current", "todo"])
+        self.assertEqual(state("rfq_sent", rfq={"id": 1})[:3], ["done", "done", "current"])
+        self.assertEqual(state("for_approval", rfq={"id": 1}, has_open=False)[3], "current")
+        self.assertEqual(set(state("closed")), {"done"})
+        self.assertIsNone(pur.ref_flow(dict(base, status="cancelled")))
+
+    def test_a_pressed_button_cannot_be_pressed_twice(self):
+        js = self.c.get("/static/js/app.js").get_data(as_text=True)
+        self.assertIn("is-loading", js)
+        self.assertIn("data-submitting", js)
+        self.assertNotIn("disabled = true", js)       # a disabled button would drop name=action from the request
 
 
 class ApprovalTests(Base):

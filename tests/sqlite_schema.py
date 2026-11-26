@@ -82,6 +82,7 @@ CREATE TABLE replenishment_items (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id I
 CREATE TABLE rfqs (id INTEGER PRIMARY KEY AUTOINCREMENT, rfq_no TEXT UNIQUE, ref_id INTEGER, reply_deadline TEXT, terms TEXT,
   status TEXT DEFAULT 'draft', created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP, sent_at TEXT);
 CREATE TABLE rfq_suppliers (rfq_id INTEGER, supplier_id INTEGER, sent_at TEXT, replied_at TEXT, PRIMARY KEY (rfq_id, supplier_id));
+CREATE TABLE rfq_items (rfq_id INTEGER, replenishment_item_id INTEGER, item_id INTEGER, qty_requested INTEGER, PRIMARY KEY (rfq_id, replenishment_item_id));
 CREATE TABLE quotations (id INTEGER PRIMARY KEY AUTOINCREMENT, rfq_id INTEGER, supplier_id INTEGER, quotation_ref TEXT,
   quotation_date TEXT, valid_until TEXT, total_amount REAL, notes TEXT, recorded_by INTEGER,
   recorded_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE (rfq_id, supplier_id));

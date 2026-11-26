@@ -2,20 +2,42 @@
 {% import '_macros.html' as m %}
 {% block title %}New RFQ {{ data.ref.ref_no }}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ 'Ask more suppliers' if data.round > 1 else 'New RFQ' }}</h1>{{ m.status('submitted', label='Will be sent') }}</div>
+{% set picked = f.getlist('supplier_ids[]') %}
+<div class="page-head"><h1>{{ 'Ask more suppliers' if data.round > 1 else 'New RFQ' }}</h1>{{ m.status('draft', label='Not created yet') }}</div>
+<p class="page-sub">Choose who to ask and by when. Creating the RFQ signs it and gives you a PDF to email to each supplier.</p>
 <form method="post" class="card">
 <div class="grid">
   {{ m.field('RFQ no.', 'rfq_no', 'text', value=next_no, readonly=True) }}
   {{ m.field('REF no.', 'ref_no', 'text', value=data.ref.ref_no, readonly=True) }}
   {{ m.field('Warehouse', 'warehouse', 'text', value=data.warehouse, readonly=True) }}
   {{ m.field('Reply deadline', 'reply_deadline', 'date', value=f.get('reply_deadline', '')) }}
-  <div class="field span-2"><label for="supplier_ids">Send to suppliers<span class="req">*</span></label>
-    <select id="supplier_ids" name="supplier_ids[]" multiple size="6" required>
-      {% for s in data.suppliers %}<option value="{{ s.id }}">{{ s.supplier_name }}{% if s.is_regular %} (regular){% endif %}{% if s.asked %} &mdash; already asked in {{ s.asked }}{% endif %}</option>{% endfor %}
-    </select>
-    <small>Use Ctrl (or Cmd) to choose more than one.</small>
+</div>
+
+<fieldset class="pick-set" data-pick-set>
+  <legend>Send to suppliers<span class="req">*</span></legend>
+  <div class="quick-select">
+    <button type="button" class="btn small" data-pick="all">Select all</button>
+    <button type="button" class="btn small" data-pick="regular">Regular suppliers</button>
+    <button type="button" class="btn small ghost" data-pick="none">Clear</button>
+    <span class="muted" data-pick-count aria-live="polite"></span>
   </div>
-  {{ m.field('Terms', 'terms', 'textarea', value=f.get('terms', ''), col=2) }}
+  <div class="pick-list">
+    {% for s in data.suppliers %}
+    <label class="pick" {% if s.is_regular %}data-regular="1"{% endif %}>
+      <input type="checkbox" name="supplier_ids[]" value="{{ s.id }}" {{ 'checked' if s.id|string in picked }}>
+      <span class="pick-main"><strong>{{ s.supplier_name }}</strong>
+        <small>{{ [s.contact_person, s.email]|select|join(' · ') or 'No contact saved' }}</small>
+        {% if s.asked %}<small class="pick-note">already asked in {{ s.asked }}</small>{% endif %}</span>
+      {% if s.is_regular %}<span class="badge s-neutral">Regular</span>{% endif %}
+    </label>
+    {% else %}
+    <p class="muted">No active suppliers yet. Add one under Suppliers first.</p>
+    {% endfor %}
+  </div>
+</fieldset>
+
+<div class="grid">
+  {{ m.field('Terms', 'terms', 'textarea', value=f.get('terms', ''), col=2, help='Printed on the RFQ, for example payment terms or delivery conditions.') }}
 </div>
 
 <h2>{{ 'Items still without a supplier' if data.round > 1 else 'Items' }}</h2>
@@ -29,8 +51,9 @@
 </table></div>
 
 <div class="actions">
-  <button type="submit" name="action" value="send_rfq_by_email" class="btn primary">Record RFQ as sent</button>
-  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+  <span class="spacer"></span>
+  <button type="submit" name="action" value="send_rfq_by_email" class="btn primary">{{ m.icon('pen') }}Sign &amp; create RFQ</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">{{ m.icon('back') }}Back</a>
 </div>
 </form>
 {% endblock %}

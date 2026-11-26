@@ -124,7 +124,7 @@ def list_items_for_select():
 
 
 def list_suppliers_select(regular_only=False):
-    sql = "SELECT id, supplier_name, is_regular FROM suppliers WHERE is_active"
+    sql = "SELECT id, supplier_name, contact_person, email, phone, is_regular FROM suppliers WHERE is_active"
     if regular_only:
         sql += " AND is_regular"
     return _b().all(sql + " ORDER BY supplier_name")
@@ -515,10 +515,100 @@ def create_rfq(user, ref_id, supplier_ids, deadline, terms):
     for sid in ids:
         _b().execute("INSERT INTO rfq_suppliers (rfq_id, supplier_id, sent_at) "
                      "VALUES (:r, :s, CURRENT_TIMESTAMP)", r=rfq_id, s=sid)
+    # The RFQ is a document: freeze what it asks about (the quantity still open right now).
+    for ln in cov.open_lines(ref_id):
+        _b().execute("INSERT INTO rfq_items (rfq_id, replenishment_item_id, item_id, qty_requested) "
+                     "VALUES (:r, :ri, :i, :q)", r=rfq_id, ri=ln["ref_item_id"], i=ln["item_id"], q=ln["open"])
     cov.refresh_status(ref_id)
     inv.write_audit(user["id"], "create", "rfqs", rfq_id,
                     new={"rfq_no": rfq_no, "ref_no": ref["ref_no"], "suppliers": names})
-    return rfq_no, len(ids)
+    return rfq_no, len(ids), rfq_id
+
+
+def get_rfq(rfq_id, user):
+    """One RFQ with its items and suppliers, or None (missing, or not this user's warehouse)."""
+    rq = _b().one(
+        "SELECT rq.*, r.ref_no, r.warehouse_id, r.status AS ref_status, w.code AS warehouse, "
+        "w.name AS warehouse_name, u.full_name AS created_by_name "
+        "FROM rfqs rq JOIN replenishments r ON r.id = rq.ref_id "
+        "JOIN locations w ON w.id = r.warehouse_id JOIN users u ON u.id = rq.created_by "
+        "WHERE rq.id = :i", i=rfq_id)
+    if rq is None:
+        return None
+    if user["role"] != "owner" and (user["role"] != "warehouse_manager"
+                                    or rq["warehouse_id"] != user["location_id"]):
+        return None
+    rq["items"] = _b().all(
+        "SELECT x.replenishment_item_id AS ref_item_id, x.item_id, x.qty_requested, i.item_code, i.item_name "
+        "FROM rfq_items x JOIN items i ON i.id = x.item_id WHERE x.rfq_id = :r ORDER BY i.item_name", r=rfq_id)
+    if not rq["items"]:      # an RFQ made before rfq_items existed (migration 020 fills these in)
+        rq["items"] = _b().all(
+            "SELECT ri.id AS ref_item_id, ri.item_id, ri.qty_requested, i.item_code, i.item_name "
+            "FROM replenishment_items ri JOIN items i ON i.id = ri.item_id "
+            "WHERE ri.ref_id = :r ORDER BY i.item_name", r=rq["ref_id"])
+    rq["suppliers"] = _b().all(
+        "SELECT s.id AS supplier_id, s.supplier_name, s.contact_person, s.email, s.phone, s.address, "
+        "rs.sent_at, rs.replied_at, "
+        "(SELECT q.id FROM quotations q WHERE q.rfq_id = rs.rfq_id AND q.supplier_id = s.id) AS quotation_id, "
+        "(SELECT q.total_amount FROM quotations q WHERE q.rfq_id = rs.rfq_id AND q.supplier_id = s.id) "
+        "AS total_quoted "
+        "FROM rfq_suppliers rs JOIN suppliers s ON s.id = rs.supplier_id "
+        "WHERE rs.rfq_id = :r ORDER BY s.supplier_name", r=rfq_id)
+    rq["n_replied"] = sum(1 for s in rq["suppliers"] if s["replied_at"])
+    rq["is_latest"] = bool(_b().one(
+        "SELECT 1 AS x FROM rfqs WHERE ref_id = :r AND id > :i LIMIT 1", r=rq["ref_id"], i=rfq_id) is None)
+    return rq
+
+
+def next_supplier_to_quote(ref_id, current_supplier_id):
+    """After saving one reply: the next supplier of the latest RFQ that has not replied yet."""
+    rfq = _ref_rfq(ref_id)
+    if rfq is None:
+        return None
+    row = _b().one(
+        "SELECT rs.supplier_id FROM rfq_suppliers rs JOIN suppliers s ON s.id = rs.supplier_id "
+        "WHERE rs.rfq_id = :r AND rs.replied_at IS NULL AND rs.supplier_id <> :s "
+        "ORDER BY s.supplier_name LIMIT 1", r=rfq["id"], s=current_supplier_id)
+    return row["supplier_id"] if row else None
+
+
+FLOW_STEPS = ("REF", "RFQ", "Quotes", "Approval", "Purchase order", "Receiving")
+
+
+def ref_flow(ref):
+    """Where a REF is on its way from request to goods: the six steps, which are done, and one
+    sentence saying what to do next. None for a cancelled REF (it has no path any more)."""
+    status = ref["status"]
+    if status == "cancelled":
+        return None
+    live_pos = [p for p in ref.get("pos", []) if p["status"] != "cancelled"]
+    if status == "draft":
+        cur, nxt = 0, "Sign and submit this REF."
+    elif status == "closed":
+        cur, nxt = len(FLOW_STEPS), "Everything has been received."
+    elif status == "receiving":
+        cur, nxt = 5, "Goods are arriving. Record each delivery under Supplier receiving."
+    elif status == "approved":
+        if any(p["status"] == "draft" for p in live_pos):
+            cur, nxt = 4, "Send the purchase order to the supplier."
+        else:
+            cur, nxt = 4, "Wait for the supplier's delivery, then record it under Supplier receiving."
+    elif status == "for_approval":
+        cur, nxt = 3, "The owner is deciding. You will be notified."
+    elif not ref.get("rfq"):
+        cur, nxt = 1, "Create an RFQ, or choose a regular supplier's agreed price."
+    else:
+        replied = any(r["replied_at"] for r in ref.get("rfq_rows", []))
+        if ref.get("has_open"):
+            cur = 2
+            nxt = ("Choose suppliers, or record more replies first." if replied
+                   else "Send the RFQ, then record each supplier's reply.")
+        else:
+            cur, nxt = 3, "Waiting for the owner."
+    steps = [{"label": label,
+              "state": "done" if i < cur else "current" if i == cur else "todo"}
+             for i, label in enumerate(FLOW_STEPS)]
+    return {"steps": steps, "next": nxt}
 
 
 # ---------------------------------------------------------------------

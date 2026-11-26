@@ -50,6 +50,15 @@ restock alert ──► REF (draft ─► submitted)
 | Suppliers list | `/purchasing/suppliers` | warehouse manager, owner |
 | Supplier new / edit (with agreed prices) | `/purchasing/suppliers/new`, `/<id>/edit` | warehouse manager |
 
+## RFQ document and button standard (migration 020)
+
+* **The RFQ is a document.** *Sign & create RFQ* signs it (Prepared by, warehouse manager), freezes the items it asks about in `rfq_items` (a later round lists only what was still open) and opens the RFQ page at `/purchasing/ref/<id>/rfq/<rfq_id>`. The page shows the document (items with blank **Unit price** and **Lead time** boxes, reply-by date, terms), a **Suppliers** tracker (copy, PDF, record reply, replied or waiting) and the lifecycle. `/documents/RFQ/<id>` and `.pdf` work like every other document.
+* **One copy per supplier.** `?supplier=<id>` addresses the copy to that supplier and does not name the others; without it the copy is internal and lists everyone invited. The addressee is not part of the content fingerprint, so a supplier copy never shows "changed after signing".
+* **Older RFQs.** Run `database/migrations/020_rfq_document.sql` once (it also allows `RFQ` in the `document_signatures` check). It fills `rfq_items` best-effort: the items each RFQ's suppliers quoted, else every item of the REF. An RFQ with no `rfq_items` rows falls back to the REF's items, and a manager can sign it from its page.
+* **REF page.** A six-step strip (REF, RFQ, Quotes, Approval, Purchase order, Receiving) with one *Next:* sentence (`purchasing_ops.ref_flow`). Buttons appear once, in the bottom bar: Cancel on the left, other actions, the one main action, Back last.
+* **Quotations.** *Save & next supplier* jumps to the next supplier of the RFQ that has not replied, and to the REF when none are left.
+* **Press once.** Every POST form shows a spinner on the pressed button and ignores a second submit. The button is deliberately not `disabled` (that would drop its `action` value).
+
 ## Decisions made while building it
 
 | Topic | Decision |

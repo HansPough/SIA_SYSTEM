@@ -187,6 +187,21 @@ a.tile:hover { border-color: var(--brand); transform: translateY(-2px); box-shad
 .btn.ghost:hover { background: #e6e8eb; }
 .btn.small { height: 30px; padding: 0 12px; font-size: 12.5px; border-radius: 7px; }
 .btn[disabled], .btn.disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+.btn .ico { width: 16px; height: 16px; flex: 0 0 16px; }
+.btn.small .ico { width: 14px; height: 14px; flex-basis: 14px; }
+.btn.primary { box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.btn.danger.primary { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* A button that was just pressed: it shows work is happening and ignores a second click,
+   so a double-click can never create two documents. Set by app.js on form submit. */
+.btn.is-loading { position: relative; color: transparent !important; pointer-events: none; }
+.btn.is-loading .ico { opacity: 0; }
+.btn.is-loading::after { content: ""; position: absolute; width: 16px; height: 16px; left: calc(50% - 8px); top: calc(50% - 8px);
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: btn-spin .7s linear infinite;
+  color: var(--ink); }
+.btn.primary.is-loading::after { color: #fff; }
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+/* Finger-sized targets on touch screens. */
+@media (pointer: coarse) { .btn { height: 44px; } .btn.small { height: 38px; } }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 20px; }
 /* On a document page the action bar (Sign, Release, PDF...) stays in view while the document scrolls.
    Buttons inside a data-entry form stay in the normal flow so they never hide an input. */
@@ -199,6 +214,8 @@ a.tile:hover { border-color: var(--brand); transform: translateY(-2px); box-shad
 .content { scroll-padding-bottom: 96px; }
 .actions form { margin: 0; display: inline-flex; }
 .actions .spacer { flex: 1; }
+/* Action bar order (app convention, tested): Cancel/danger on the left, a spacer, the other
+   actions, the one main (.primary) action, and Back always last. */
 .quick-select { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
 .quick-select .muted { font-size: 12.5px; }
 .quick-select .btn { border-radius: 999px; }
@@ -484,6 +501,10 @@ dl.info.doc-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0
   .page-head h1 { font-size: 21px; }
   .actions { gap: 8px; }
   .actions .btn { flex: 1 1 auto; justify-content: center; }
+  /* On a phone the main action comes first and fills the row; the spacer is not needed. */
+  .actions .spacer { display: none; }
+  .actions .btn.primary, .actions form:has(.btn.primary) { order: -1; flex: 1 1 100%; }
+  .actions form .btn { width: 100%; }
   .toast-stack { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
   .doc-parties { gap: 14px; }
   dl.info.doc-meta { gap: 14px; }
@@ -498,3 +519,47 @@ dl.info.doc-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0
 .tab-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--danger); color: #fff;
   font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
 .page-sub { color: var(--muted); margin: -8px 0 16px; max-width: 760px; }
+
+/* ---------- "where am I" stepper (REF) ---------- */
+.flow { padding: 16px 20px 14px; }
+.stepper { display: flex; list-style: none; margin: 0; padding: 0; counter-reset: step; overflow-x: auto; }
+.step { flex: 1 1 0; min-width: 92px; position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px;
+  text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); }
+.step::before { counter-increment: step; content: counter(step); position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; background: #fff; border: 2px solid var(--line); font-weight: 700; font-size: 12px; }
+.step::after { content: ""; position: absolute; top: 13px; left: calc(50% + 17px); right: calc(-50% + 17px); height: 2px; background: var(--line); }
+.step:last-child::after { display: none; }
+.step.done { color: #0f5c2e; }
+.step.done::before { content: "\2713"; background: var(--ok); border-color: var(--ok); color: #fff; }
+.step.done::after { background: var(--ok); }
+.step.current { color: var(--ink); }
+.step.current::before { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 0 0 4px rgba(17, 17, 17, .12); }
+.flow-next { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 13.5px; }
+.stepper + .flow-next { margin-top: 12px; }
+.card.flow > .flow-next:only-child { margin: 0; padding: 0; border: 0; }
+/* Phone: six labels do not fit, so every step is a circle and only the current one is named. */
+@media (max-width: 560px) {
+  .stepper { overflow: visible; }
+  .step { min-width: 0; }
+  .step span { white-space: nowrap; }
+  .step:not(.current) span { visibility: hidden; }
+}
+
+/* ---------- choose-from-a-list (suppliers on the RFQ form) ---------- */
+.pick-set { border: 0; padding: 0; margin: 20px 0 6px; min-width: 0; }
+.pick-set legend { font-weight: 700; font-size: 13px; padding: 0; margin-bottom: 10px; }
+.pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.pick { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: #fff; cursor: pointer; min-width: 0; transition: border-color .12s, background .12s; }
+.pick:hover { border-color: #aab0b8; background: #fafbfc; }
+.pick:has(input:checked) { border-color: var(--brand); background: #f4f5f6; box-shadow: inset 0 0 0 1px var(--brand); }
+.pick:has(input:focus-visible) { outline: 3px solid rgba(17, 17, 17, .35); outline-offset: 2px; }
+.pick input { width: 20px; height: 20px; flex: 0 0 20px; margin: 0; }
+.pick-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.pick-note { color: var(--warn); font-weight: 600; }
+
+/* ---------- RFQ document: boxes the supplier fills in ---------- */
+.doc-intro { margin: 0 0 4px; color: #30353b; }
+.doc-items th.fill-head { text-align: left; min-width: 110px; }
+.doc-items td.fill { border-left: 1px dashed var(--line); background-image: linear-gradient(transparent calc(100% - 1px), #b8bec6 0); height: 34px; }
+@media print { .doc-items td.fill { border-left: 1px solid #999; background-image: none; border-bottom: 1px solid #999; height: 26pt; } }

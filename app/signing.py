@@ -40,6 +40,11 @@ SLOTS = {
         {"key": "prepared_by", "label": "Prepared by", "roles": ("warehouse_manager",), "mode": "action"},
         {"key": "approved_by", "label": "Approved by (Owner)", "roles": ("owner",), "mode": "action"},
     ],
+    # The RFQ is signed when it is created ("Sign & create"). It is "manual" so a manager can still
+    # sign an RFQ that was created before RFQs had a signature line.
+    "RFQ": [
+        {"key": "prepared_by", "label": "Prepared by (Warehouse)", "roles": ("warehouse_manager",), "mode": "manual"},
+    ],
     "PO": [
         {"key": "approved_by", "label": "Approved by (Owner)", "roles": ("owner",), "mode": "action"},
         {"key": "sent_by", "label": "Sent to supplier by", "roles": ("warehouse_manager",), "mode": "action"},

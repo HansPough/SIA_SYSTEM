@@ -64,8 +64,10 @@
 <p class="muted">Leave the quantity at 0 if the supplier did not offer the item. The unit price must be more than zero.</p>
 
 <div class="actions">
-  <button type="submit" name="action" value="save_quotation" class="btn primary">Save quotation</button>
-  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=data.ref.id) }}">Back</a>
+  <span class="spacer"></span>
+  <button type="submit" name="action" value="save_quotation" class="btn secondary">Save quotation</button>
+  <button type="submit" name="action" value="save_and_next" class="btn primary">Save &amp; next supplier{{ m.icon('next') }}</button>
+  <a class="btn ghost" href="{{ url_for('purchasing.rfq_detail', ref_id=data.ref.id, rfq_id=data.rfq.id) }}">{{ m.icon('back') }}Back</a>
 </div>
 </form>
 <script type="application/json" id="supplier-prices">{{ data.supplier_prices|tojson }}</script>

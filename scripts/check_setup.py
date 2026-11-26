@@ -24,7 +24,7 @@ REQUIRED_TABLES = [
     "stock_adjustments", "stock_adjustment_items", "notifications",
     "notification_items", "requisitions", "requisition_items", "reservations",
     "suppliers", "supplier_items", "replenishments", "replenishment_items",
-    "rfqs", "rfq_suppliers", "quotations", "quotation_items",
+    "rfqs", "rfq_suppliers", "rfq_items", "quotations", "quotation_items",
     "purchase_approvals", "purchase_orders", "purchase_order_items",
     "goods_receipts", "goods_receipt_items", "discrepancy_reports",
     "discrepancy_items", "transfer_slips", "transfer_slip_items",

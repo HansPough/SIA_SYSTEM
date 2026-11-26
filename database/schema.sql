@@ -341,6 +341,15 @@ CREATE TABLE rfq_suppliers (
     PRIMARY KEY (rfq_id, supplier_id)
 );
 
+-- The items one RFQ asks about, frozen when the RFQ is created (migration 020).
+CREATE TABLE rfq_items (
+    rfq_id                INTEGER NOT NULL REFERENCES rfqs(id) ON DELETE CASCADE,
+    replenishment_item_id INTEGER NOT NULL REFERENCES replenishment_items(id),
+    item_id               INTEGER NOT NULL REFERENCES items(id),
+    qty_requested         INTEGER NOT NULL CHECK (qty_requested > 0),
+    PRIMARY KEY (rfq_id, replenishment_item_id)
+);
+
 -- Suppliers reply by email. The warehouse manager records the reply here.
 CREATE TABLE quotations (
     id             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -562,7 +571,7 @@ CREATE TABLE audit_log (
 
 CREATE TABLE document_signatures (
     id             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    doc_type       VARCHAR(10) NOT NULL CHECK (doc_type IN ('RF', 'REF', 'PO', 'TS', 'AR', 'RM', 'DR')),
+    doc_type       VARCHAR(10) NOT NULL CHECK (doc_type IN ('RF', 'REF', 'RFQ', 'PO', 'TS', 'AR', 'RM', 'DR')),
     doc_id         INTEGER NOT NULL,
     slot           VARCHAR(30) NOT NULL,
     signer_user_id INTEGER REFERENCES users(id),
@@ -647,6 +656,7 @@ CREATE INDEX ix_adjustments_status      ON stock_adjustments (status);
 CREATE INDEX ix_ref_status              ON replenishments (status);
 CREATE INDEX ix_ref_items_ref           ON replenishment_items (ref_id);
 CREATE INDEX ix_rfq_ref                 ON rfqs (ref_id);
+CREATE INDEX ix_rfq_items_rfq            ON rfq_items (rfq_id);
 CREATE INDEX ix_quotation_items_q       ON quotation_items (quotation_id);
 CREATE INDEX ix_approvals_decision      ON purchase_approvals (decision);
 CREATE INDEX ix_purchase_approval_items_approval ON purchase_approval_items (approval_id);

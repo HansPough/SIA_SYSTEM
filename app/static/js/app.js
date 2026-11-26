@@ -396,3 +396,55 @@ function updateDiff(row) {
       diff = row.querySelector("input[name='qty_diff[]']");
   if (sys && act && diff) { diff.value = (sys.value !== "" && act.value !== "") ? (Number(act.value) - Number(sys.value)) : ""; }
 }
+
+// ---- Press once -----------------------------------------------------------
+// After a form is sent the pressed button shows a spinner and the form ignores a second
+// submit, so a double-click cannot create two documents. The button is NOT disabled (a disabled
+// button would drop its name=value pair from the request, and the server needs "action").
+// Back/forward and a slow download reset it; a form that opts out uses data-no-guard.
+(function () {
+  var timers = new WeakMap();
+  function release(form) {
+    form.removeAttribute("data-submitting");
+    form.querySelectorAll(".btn.is-loading").forEach(function (b) { b.classList.remove("is-loading"); b.removeAttribute("aria-busy"); });
+  }
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form || form.hasAttribute("data-no-guard") || e.defaultPrevented) { return; }
+    if (form.getAttribute("method") && form.getAttribute("method").toLowerCase() === "get") { return; }
+    if (form.target && form.target !== "_self") { return; }
+    if (form.hasAttribute("data-submitting")) { e.preventDefault(); return; }
+    form.setAttribute("data-submitting", "1");
+    var btn = e.submitter || form.querySelector("button[type=submit], button:not([type])");
+    if (btn && btn.classList.contains("btn")) { btn.classList.add("is-loading"); btn.setAttribute("aria-busy", "true"); }
+    clearTimeout(timers.get(form));
+    timers.set(form, setTimeout(function () { release(form); }, 20000));   // never leave a button stuck
+  });
+  window.addEventListener("pageshow", function () {
+    document.querySelectorAll("form[data-submitting]").forEach(release);
+  });
+})();
+
+// ---- Choose-from-a-list (suppliers on the RFQ form) ------------------------
+(function () {
+  document.querySelectorAll("[data-pick-set]").forEach(function (set) {
+    var boxes = function () { return Array.prototype.slice.call(set.querySelectorAll("input[type=checkbox]")); };
+    var count = set.querySelector("[data-pick-count]");
+    function update() {
+      var n = boxes().filter(function (b) { return b.checked; }).length;
+      if (count) { count.textContent = n ? n + " selected" : "None selected"; }
+    }
+    set.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-pick]");
+      if (!btn) { return; }
+      var mode = btn.getAttribute("data-pick");
+      boxes().forEach(function (b) {
+        var regular = !!b.closest("label").hasAttribute("data-regular");
+        b.checked = mode === "all" ? true : mode === "regular" ? regular : false;
+      });
+      update();
+    });
+    set.addEventListener("change", update);
+    update();
+  });
+})();

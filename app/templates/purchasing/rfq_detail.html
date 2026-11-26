@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% import '_macros.html' as m %}
+{% block title %}{{ rfq.rfq_no }}{% endblock %}
+{% block content %}
+{% set wm = current_role == 'warehouse_manager' %}
+{% set can_quote = wm and rfq.is_latest and rfq.ref_status in ['submitted', 'rfq_sent'] %}
+<div class="page-head no-print">
+  <h1>{{ rfq.rfq_no }}</h1>
+  {{ m.status(rfq.status) }}
+</div>
+
+<div class="card flow no-print">
+  <p class="flow-next"><strong>Next:</strong>
+  {% if rfq.n_replied >= rfq.suppliers|length and rfq.suppliers %}Every supplier has replied. Choose suppliers on the REF.
+  {% elif can_quote %}Download the copy for each supplier below and email it. Then record each reply as it arrives ({{ rfq.n_replied }} of {{ rfq.suppliers|length }} so far).
+  {% else %}{{ rfq.n_replied }} of {{ rfq.suppliers|length }} suppliers have replied.{% endif %}</p>
+</div>
+
+<div class="doc-split">
+<div class="doc-main">
+  {% if supplier_id %}
+  <div class="note no-print">This is the copy addressed to one supplier. It does not name the other suppliers.
+    <a href="{{ url_for('purchasing.rfq_detail', ref_id=rfq.ref_id, rfq_id=rfq.id) }}">Show the internal copy</a></div>
+  {% endif %}
+  {% set d = load_document('RFQ', rfq.id, supplier_id) %}
+  {% if d %}{% include 'print/_document_body.html' %}{% endif %}
+</div>
+
+<aside class="doc-side">
+<div class="card no-print">
+  <h2>Suppliers</h2>
+  <p class="muted">Send each supplier their own copy. It is addressed to them and does not show who else was asked.</p>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Supplier</th><th>Reply</th><th class="num">Quoted</th><th></th></tr></thead>
+    <tbody>
+    {% for s in rfq.suppliers %}
+    <tr {% if supplier_id == s.supplier_id %}class="picked"{% endif %}>
+      <td>{{ s.supplier_name }}<small>{{ [s.contact_person, s.email]|select|join(' · ') or 'No contact saved' }}</small></td>
+      <td>{% if s.replied_at %}{{ m.status('received', label='Replied ' ~ (s.replied_at|string)[:10]) }}{% else %}{{ m.status('pending', label='Waiting') }}{% endif %}</td>
+      <td class="num">{{ s.total_quoted|money if s.quotation_id else '–' }}</td>
+      <td class="nowrap">
+        <a class="btn small" href="{{ url_for('purchasing.rfq_detail', ref_id=rfq.ref_id, rfq_id=rfq.id, supplier=s.supplier_id) }}">{{ m.icon('file') }}Copy</a>
+        <a class="btn small" href="{{ url_for('documents.pdf', doc_type='RFQ', doc_id=rfq.id, supplier=s.supplier_id) }}" download>{{ m.icon('down') }}PDF</a>
+        {% if can_quote %}<a class="btn small secondary" href="{{ url_for('purchasing.quotation_new', ref_id=rfq.ref_id, supplier_id=s.supplier_id) }}">{{ 'Edit reply' if s.replied_at else 'Record reply' }}</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<details class="card no-print" open><summary>RFQ details</summary>
+<dl class="info">
+  <div><dt>RFQ no.</dt><dd>{{ rfq.rfq_no }}</dd></div>
+  <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=rfq.ref_id) }}">{{ rfq.ref_no }}</a></dd></div>
+  <div><dt>Reply deadline</dt><dd>{{ (rfq.reply_deadline|string)[:10] if rfq.reply_deadline else 'None set' }}</dd></div>
+  <div><dt>Created by</dt><dd>{{ rfq.created_by_name }}</dd></div>
+  <div><dt>Status</dt><dd>{{ m.status(rfq.status) }}</dd></div>
+</dl>
+<h2>Lifecycle</h2>
+<ul class="timeline">
+  {% for e in load_lifecycle('RFQ', rfq.id) %}
+  <li><span class="when">{{ e.when }}</span><span class="what">{{ e.what }}</span><span class="who">{{ e.who }}</span></li>
+  {% else %}<li class="muted">No events yet.</li>{% endfor %}
+</ul>
+</details>
+</aside>
+</div>
+
+<div class="actions no-print">
+  <span class="spacer"></span>
+  {% if can_quote %}
+  <a class="btn primary" href="{{ url_for('purchasing.quotation_new', ref_id=rfq.ref_id) }}">{{ m.icon('plus') }}Record a reply</a>
+  {% endif %}
+  <a class="btn ghost" href="{{ url_for('purchasing.ref_detail', ref_id=rfq.ref_id) }}">{{ m.icon('back') }}Back</a>
+</div>
+{% endblock %}
