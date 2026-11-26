@@ -30,8 +30,10 @@ def summary(user):
         "pos_waiting_delivery": 0, "my_pending_adjustments": 0, "active_restock_alerts": 0,
     }
     if role == "owner":
-        out["pending_approvals"] = _count(
-            "SELECT COUNT(*) AS n FROM purchase_approvals WHERE decision = 'pending'")
+        # Everything waiting for the owner's say: REFs to approve, and supplier choices to decide.
+        out["pending_approvals"] = (
+            _count("SELECT COUNT(*) AS n FROM purchase_approvals WHERE decision = 'pending'")
+            + _count("SELECT COUNT(*) AS n FROM replenishments WHERE status = 'pending_owner'"))
         out["open_rfs"] = _count(
             "SELECT COUNT(*) AS n FROM requisitions "
             "WHERE status IN ('open', 'partially_delivered')")

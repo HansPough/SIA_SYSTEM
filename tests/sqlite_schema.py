@@ -75,6 +75,7 @@ CREATE TABLE supplier_items (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id I
   valid_from TEXT, valid_to TEXT, UNIQUE (supplier_id, item_id, valid_from));
 CREATE TABLE replenishments (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_no TEXT UNIQUE, warehouse_id INTEGER, notification_id INTEGER,
   status TEXT DEFAULT 'draft', created_by INTEGER, remarks TEXT, cancel_reason TEXT,
+  owner_decided_by INTEGER, owner_decided_at TEXT, owner_remarks TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, submitted_at TEXT, closed_at TEXT);
 CREATE TABLE replenishment_items (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_id INTEGER, item_id INTEGER, qty_requested INTEGER,
   qty_received INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT 'below_rop', rf_id INTEGER,

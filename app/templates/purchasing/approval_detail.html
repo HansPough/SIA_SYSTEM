@@ -14,6 +14,12 @@
 </dl>
 </div>
 
+<div class="note">
+  <strong>The decision is yours.</strong> The warehouse manager picked these suppliers as a recommendation.
+  Approve each one to create its purchase order, or reject it and the items go back to the warehouse manager.
+  Where a cheaper offer was not chosen, it is listed so you can see what was passed over.
+</div>
+
 <form method="post">
 {% for b in appr.batch %}
 <div class="card">
@@ -21,15 +27,27 @@
     {{ m.status(b.decision) }}</h2>
   <p class="muted">{{ 'Agreed price (regular supplier)' if b.basis == 'agreed_price' else 'Mixed: quotation and agreed price' if b.basis == 'mixed' else 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') }}</p>
   <div class="table-wrap"><table class="data">
-  <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr></thead>
+  <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th>How this compares</th></tr></thead>
   <tbody>
   {% for l in b.lines %}
+  {% set c = l.compare %}
   <tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty }}</td>
-  <td class="num">{{ l.unit_price|money }}</td><td class="num">{{ l.amount|money }}</td></tr>
+  <td class="num">{{ l.unit_price|money }}</td><td class="num">{{ l.amount|money }}</td>
+  <td>
+    {% if c and c.mine %}
+      <span class="chips">{{ m.medal(c.mine.rank) }}{% if c.mine.fastest %}<span class="chip chip-fast">{{ m.icon('bolt') }}Fastest</span>{% endif %}{% if c.mine.only_offer %}<span class="chip">Only offer</span>{% endif %}{% if c.mine.kind == 'agreed_price' %}<span class="chip">Agreed price</span>{% endif %}</span>
+      <small class="muted">{{ c.n_offers }} offer{{ 's' if c.n_offers != 1 }} compared</small>
+    {% elif c %}<small class="muted">{{ c.n_offers }} offer{{ 's' if c.n_offers != 1 }} compared</small>{% else %}<small class="muted">&ndash;</small>{% endif %}
+    {% if c and c.cheaper %}
+    <div class="cheaper"><strong>Cheaper offers not chosen:</strong>
+      {% for o in c.cheaper %}<span>{{ o.supplier_name }} {{ o.unit_price|money }}{% if o.lead is not none %}, {{ o.lead }} day{{ 's' if o.lead != 1 }}{% endif %}{% if not o.covers %}, short by {{ o.short }}{% endif %}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </td></tr>
   {% else %}
-  <tr><td colspan="4" class="muted">No priced lines.</td></tr>
+  <tr><td colspan="5" class="muted">No priced lines.</td></tr>
   {% endfor %}
-  <tr><td colspan="3" class="num"><strong>Total</strong></td><td class="num"><strong>{{ b.total|money }}</strong></td></tr>
+  <tr><td colspan="3" class="num"><strong>Total</strong></td><td class="num"><strong>{{ b.total|money }}</strong></td><td></td></tr>
   </tbody>
   </table></div>
   {% if b.decision == 'pending' %}
@@ -70,7 +88,7 @@
   {{ m.field('Remarks', 'remarks', 'textarea', value=f.get('remarks', ''), col=2,
              help='required when rejecting') }}
 </div>
-{{ m.signing_box('Approving signs the REF and each new purchase order with your signature. Rejecting does not sign anything.') }}
+{{ m.signing_box('Approving signs each new purchase order with your signature. Rejecting does not sign anything.') }}
 <div class="actions">
   <button type="submit" name="action" value="submit_decision" class="btn primary">Submit decision</button>
   <a class="btn ghost" href="{{ url_for('purchasing.approval_list') }}">Back</a>

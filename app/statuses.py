@@ -74,6 +74,7 @@ STATUS_TONES = {
     "sent": "info",
     "ready_to_send": "info",
     "submitted": "info",
+    "pending_owner": "warn",
     "info": "info",
     "created": "info",
     "updated": "info",
@@ -90,6 +91,8 @@ TONE_CLASSES = {
 # Statuses whose normal capitalisation looks wrong (abbreviations, small words).
 STATUS_LABELS = {
     "rfq_sent": "RFQ sent",
+    "pending_owner": "Waiting for owner",
+    "submitted": "Ready for RFQ",
     "ready_to_send": "Ready to send",
     "ok": "OK",
     "in_transit": "In transit",

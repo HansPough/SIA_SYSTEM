@@ -297,10 +297,13 @@ CREATE TABLE replenishments (            -- REF
     warehouse_id    INTEGER NOT NULL REFERENCES locations(id),
     notification_id INTEGER REFERENCES notifications(id),
     status          VARCHAR(20) NOT NULL DEFAULT 'draft'
-                    CHECK (status IN ('draft', 'submitted', 'rfq_sent', 'for_approval', 'approved', 'receiving', 'closed', 'cancelled')),
+                    CHECK (status IN ('draft', 'pending_owner', 'submitted', 'rfq_sent', 'for_approval', 'approved', 'receiving', 'closed', 'cancelled')),
     created_by      INTEGER NOT NULL REFERENCES users(id),
     remarks         TEXT,
     cancel_reason   TEXT,
+    owner_decided_by INTEGER REFERENCES users(id),   -- the owner's decision on the REF itself (migration 021)
+    owner_decided_at TIMESTAMPTZ,
+    owner_remarks    TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     submitted_at    TIMESTAMPTZ,
     closed_at       TIMESTAMPTZ,

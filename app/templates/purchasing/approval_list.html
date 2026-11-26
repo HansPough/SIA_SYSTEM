@@ -3,7 +3,25 @@
 {% block title %}Approvals{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Approvals</h1></div>
+{% if refs_to_approve %}
 <div class="card">
+<h2 style="margin-top:0">Replenishment forms waiting for your approval <span class="badge s-warn">{{ refs_to_approve|length }}</span></h2>
+<p class="muted">Approve a REF and the warehouse manager can ask suppliers for prices. You decide which supplier gets the order later.</p>
+<div class="table-wrap"><table class="data">
+<thead><tr><th>REF no.</th><th>Warehouse</th><th>Requested by</th><th class="num">Items</th><th class="num">Total qty</th><th>Submitted</th><th></th></tr></thead>
+<tbody>
+{% for r in refs_to_approve %}
+<tr><td class="nowrap">{{ r.ref_no }}</td><td>{{ r.warehouse }}</td><td>{{ r.created_by_name }}</td>
+<td class="num">{{ r.n_items }}</td><td class="num">{{ r.n_qty }}</td>
+<td class="nowrap">{{ (r.submitted_at|string)[:10] }}</td>
+<td><a class="btn small primary" href="{{ url_for('purchasing.ref_detail', ref_id=r.id) }}">Review</a></td></tr>
+{% endfor %}
+</tbody>
+</table></div>
+</div>
+{% endif %}
+<div class="card">
+<h2 style="margin-top:0">Supplier choices</h2>
 <form method="get" class="filters">
   <input type="search" name="q" value="{{ f.get('q', '') }}" placeholder="Search REF no. or supplier...">
   <select name="decision"><option value="">Decision: all</option>

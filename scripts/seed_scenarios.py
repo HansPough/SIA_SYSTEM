@@ -424,11 +424,18 @@ def run(app):
     healthy(pool, wh=60, shop=25)
     pi = iter(pool)
 
-    def ref(n_items, qty=20, action="submit_ref", remarks="Demo replenishment"):
+    def approve_ref(ref_id):
+        """The owner approves a submitted REF; only then can the warehouse manager send an RFQ."""
+        owner.post("/purchasing/ref/%d" % ref_id, {"action": "approve_ref", "remarks": "OK to ask suppliers for prices"},
+                   "owner approves REF")
+
+    def ref(n_items, qty=20, action="submit_ref", remarks="Demo replenishment", approve=True):
         its = [next(pi) for _ in range(n_items)]
         whmgr.post("/purchasing/ref/new", {"remarks": remarks, "action": action,
                    "item_id[]": [i["id"] for i in its], "qty_requested[]": [qty] * n_items,
                    "reason[]": ["below_rop"] * n_items}, "create REF")
+        if action == "submit_ref" and approve:
+            approve_ref(latest("replenishments"))
         return latest("replenishments"), latest("replenishments", "ref_no"), its
 
     def line_ids(ref_id):
@@ -481,6 +488,7 @@ def run(app):
         whmgr.post("/purchasing/ref/new", {"remarks": "Created from the restock alert", "action": "submit_ref",
                    "alert_id": restock["id"], "item_id[]": [it[3]["id"]], "qty_requested[]": [60],
                    "reason[]": ["below_rop"]}, "REF from the restock alert")
+        approve_ref(latest("replenishments"))
         done = q1("SELECT status FROM notifications WHERE id = :i", i=restock["id"])["status"]
         if done != "completed":
             raise SeedError("The restock alert should complete when a REF is made from it (status %s)." % done)
@@ -493,8 +501,14 @@ def run(app):
     # P2: items with agreed prices: can be ordered with NO RFQ
     whmgr.post("/purchasing/ref/new", {"remarks": "Regular supplier agreed prices exist", "action": "submit_ref",
                "item_id[]": [agreed[0]["id"], agreed[1]["id"]], "qty_requested[]": [12, 12], "reason[]": ["below_rop"] * 2}, "REF")
-    note("REF", "REF submitted (agreed prices exist)", latest("replenishments", "ref_no"), "whmgr",
+    approve_ref(latest("replenishments"))
+    note("REF", "REF submitted and approved (agreed prices exist)", latest("replenishments", "ref_no"), "whmgr",
          "Choose suppliers: pick 'agreed price' without sending an RFQ")
+    # P2b: a REF still waiting for the owner: the owner approves or rejects it
+    whmgr.post("/purchasing/ref/new", {"remarks": "Waiting for the owner", "action": "submit_ref",
+               "item_id[]": [agreed[2]["id"], agreed[3]["id"]], "qty_requested[]": [15, 15], "reason[]": ["below_rop"] * 2}, "REF")
+    note("REF", "REF waiting for the OWNER's approval", latest("replenishments", "ref_no"), "owner",
+         "Approvals: 'Replenishment forms waiting for your approval' > Review > Approve & sign (or reject with a reason)")
     used_agreed = {agreed[0]["id"], agreed[1]["id"]}
     pi = iter([i for i in pool if i["id"] not in used_agreed])
 

@@ -158,16 +158,16 @@ def ref_new():
                 _lines("item_id[]", "qty_requested[]", "reason[]"),
                 request.form.get("action") == "submit_ref",
                 alert_id=alert["id"] if alert else None)
-            if status == "submitted":      # sending the form signs it, in the same save
+            if status == "pending_owner":      # sending the form signs it, in the same save
                 docs.sign_on_action(user, "REF", ref_id, "prepared_by")
             inv.commit()
         except InventoryError as e:
             inv.rollback()
             flash(str(e), "error")
         else:
-            if status == "submitted":
-                flash("%s signed and submitted.%s" % (ref_no, " Alert completed."
-                                                      if alert else ""), "success")
+            if status == "pending_owner":
+                flash("%s signed and sent to the owner for approval.%s" % (ref_no, " Alert completed."
+                                                                          if alert else ""), "success")
             else:
                 flash("%s saved as draft." % ref_no, "success")
             return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
@@ -198,11 +198,27 @@ def ref_detail(ref_id):
                 inv.rollback()
                 flash(str(e), "error")
             else:
-                flash("%s signed and submitted." % ref_no, "success")
+                flash("%s signed and sent to the owner for approval." % ref_no, "success")
+        elif user["role"] == "owner" and request.form.get("action") in ("approve_ref", "reject_ref"):
+            try:
+                if request.form["action"] == "approve_ref":
+                    ref_no = pur.approve_ref(user, ref_id, request.form.get("remarks"))
+                    docs.sign_on_action(user, "REF", ref_id, "approved_by", skip_if_signed=True)
+                    msg = "%s approved and signed. The warehouse manager can now send the RFQ." % ref_no
+                else:
+                    ref_no = pur.reject_ref(user, ref_id, request.form.get("remarks"))
+                    msg = "%s rejected." % ref_no
+                inv.commit()
+            except InventoryError as e:
+                inv.rollback()
+                flash(str(e), "error")
+            else:
+                flash(msg, "success")
+                return redirect(url_for("purchasing.approval_list"))
         return redirect(url_for("purchasing.ref_detail", ref_id=ref_id))
     can_cancel, _why = pur.can_cancel(user, ref)
     return render_template("purchasing/ref_detail.html", ref=ref, can_cancel=can_cancel,
-                           flow=pur.ref_flow(ref))
+                           flow=pur.ref_flow(ref, user["role"]))
 
 
 @bp.route("/ref/<int:ref_id>/cancel", methods=["GET", "POST"])
@@ -385,9 +401,11 @@ def ref_drop(ref_id):
 @bp.route("/approvals")
 @roles_required("owner", "warehouse_manager")
 def approval_list():
-    res = pur.list_approvals(current_user(), request.args.get("decision", ""),
+    user = current_user()
+    res = pur.list_approvals(user, request.args.get("decision", ""),
                              request.args.get("q", ""), _page())
-    return render_template("purchasing/approval_list.html", res=res, f=request.args)
+    return render_template("purchasing/approval_list.html", res=res, f=request.args,
+                           refs_to_approve=pur.list_refs_to_approve(user))
 
 
 @bp.route("/approvals/<int:approval_id>", methods=["GET", "POST"])

@@ -50,6 +50,26 @@ restock alert ──► REF (draft ─► submitted)
 | Suppliers list | `/purchasing/suppliers` | warehouse manager, owner |
 | Supplier new / edit (with agreed prices) | `/purchasing/suppliers/new`, `/<id>/edit` | warehouse manager |
 
+## Order of work: the owner decides twice (migration 021)
+
+1. The warehouse manager signs and submits the **REF**. Its status is **Waiting for owner** (`pending_owner`).
+2. The **owner approves the REF** (or rejects it with a reason, which cancels it). Approving signs the REF's "Approved by (Owner)" line and sets it to **Ready for RFQ** (`submitted`). Until then there is no RFQ, no quotation and no supplier choice for that REF.
+3. The warehouse manager sends the **RFQ**, records the replies and chooses suppliers. This is a *recommendation*.
+4. The **owner approves the supplier choice** (the PO decision) one supplier at a time. Each approved supplier gets one purchase order.
+
+* The owner finds REFs waiting in **Approvals** (a section at the top), in the sidebar badge and in the dashboard "Approvals" tile.
+* REFs already past `draft` when migration 021 ran stay as they are and are treated as already approved. Nothing in flight stops.
+* Who decided, when and what they wrote are kept in `replenishments.owner_decided_by / owner_decided_at / owner_remarks`.
+
+## Choosing suppliers: how offers are compared
+
+The screen shows one card per item with every offer in aligned columns: unit price, how far above the lowest, quantity it can supply, lead time, valid until, and the total for the quantity needed.
+
+* **Medals** (`purchasing_ops._annotate_offers`): gold, silver, bronze by unit price. Equal prices share a medal. Only given when there are at least two different prices.
+* **Labels**: *Fastest* (shortest stated lead time, only when lead times differ), *Full quantity* or *Short by N*, *Agreed price*, *Regular supplier*, *Only offer*, *Expired*.
+* Medals are display only. They never change which offer is pre-selected (the cheapest offer that covers the full quantity).
+* The owner's approval screen shows the same medal for each chosen price, how many offers were compared, and any **cheaper offers that were not chosen**.
+
 ## RFQ document and button standard (migration 020)
 
 * **The RFQ is a document.** *Sign & create RFQ* signs it (Prepared by, warehouse manager), freezes the items it asks about in `rfq_items` (a later round lists only what was still open) and opens the RFQ page at `/purchasing/ref/<id>/rfq/<rfq_id>`. The page shows the document (items with blank **Unit price** and **Lead time** boxes, reply-by date, terms), a **Suppliers** tracker (copy, PDF, record reply, replied or waiting) and the lifecycle. `/documents/RFQ/<id>` and `.pdf` work like every other document.

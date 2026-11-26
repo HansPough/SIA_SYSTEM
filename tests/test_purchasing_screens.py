@@ -73,13 +73,19 @@ class Base(unittest.TestCase):
     def flashes(self, resp):
         return re.findall(r'class="flash [a-z]+">([^<]*)<', resp.get_data(as_text=True))
 
-    def make_ref(self, submit=True, item=A, qty=5, reason="below_rop", alert_id=1):
+    def make_ref(self, submit=True, item=A, qty=5, reason="below_rop", alert_id=1, approved=True):
+        """A submitted REF. By default the owner has approved it too (the usual starting point for
+        everything after the REF); pass approved=False for a REF still waiting for the owner."""
         data = {"remarks": "test", "item_id[]": [str(item)], "qty_requested[]": [str(qty)],
                 "reason[]": [reason], "action": "submit_ref" if submit else "save_draft"}
         if alert_id:
             data["alert_id"] = str(alert_id)
         self.login("whmgr")
-        return self.c.post("/purchasing/ref/new", data=data)
+        r = self.c.post("/purchasing/ref/new", data=data)
+        if submit and approved:
+            self.owner_approves_ref(self.ref_id())
+            self.login("whmgr")
+        return r
 
     def ref_id(self):
         return self.be.one("SELECT id FROM replenishments ORDER BY id DESC LIMIT 1")["id"]
@@ -88,7 +94,14 @@ class Base(unittest.TestCase):
         return {r["item_id"]: r["id"] for r in
                 self.be.all("SELECT id, item_id FROM replenishment_items WHERE ref_id = :r", r=ref_id)}
 
+    def owner_approves_ref(self, ref_id, remarks=""):
+        self.login("owner")
+        return self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "approve_ref", "remarks": remarks})
+
     def send_rfq(self, ref_id, suppliers=(SUP_A, SUP_B)):
+        # The owner approves the REF before any RFQ goes out; most tests are about what happens next.
+        if self.be.one("SELECT status FROM replenishments WHERE id = :i", i=ref_id)["status"] == "pending_owner":
+            self.owner_approves_ref(ref_id)
         self.login("whmgr")
         return self.c.post("/purchasing/ref/%d/rfq/new" % ref_id,
                            data={"supplier_ids[]": [str(s) for s in suppliers],
@@ -172,10 +185,10 @@ class ReplenishmentFormTests(Base):
         page = self.c.get("/purchasing/ref/new?alert_id=1").get_data(as_text=True)
         self.assertIn("ANSU 12R22.5 18PR AL505", page)
         self.assertIn('value="30"', page)
-        r = self.make_ref(qty=30)
+        r = self.make_ref(qty=30, approved=False)
         self.assertEqual(r.status_code, 302)
         ref = self.be.one("SELECT * FROM replenishments")
-        self.assertEqual((ref["status"], ref["warehouse_id"], ref["notification_id"]), ("submitted", WH, 1))
+        self.assertEqual((ref["status"], ref["warehouse_id"], ref["notification_id"]), ("pending_owner", WH, 1))
         self.assertIsNotNone(ref["submitted_at"])
         # B is not on this REF, so it stays on the alert for the next order
         alert = self.be.one("SELECT status, closed_by FROM notifications WHERE id = 1")
@@ -206,7 +219,7 @@ class ReplenishmentFormTests(Base):
         self.assertIn("Sign &amp; submit REF", detail)
         self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM document_signatures")["n"], 0)    # draft: unsigned
         self.c.post("/purchasing/ref/%d" % ref["id"], data={"action": "submit_ref"})
-        self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "submitted")
+        self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "pending_owner")
         sig = self.be.one("SELECT * FROM document_signatures")
         self.assertEqual((sig["doc_type"], sig["slot"], sig["signer_name"]), ("REF", "prepared_by", "whmgr"))
         self.assertEqual(self.be.one("SELECT status FROM notifications WHERE id = 1")["status"], "active")
@@ -602,11 +615,17 @@ class RfqDocumentTests(Base):
         from app import purchasing_ops as pur
         base = {"pos": [], "rfq": None, "rfq_rows": [], "has_open": True}
         state = lambda status, **kw: [s["state"] for s in pur.ref_flow(dict(base, status=status, **kw))["steps"]]
+        self.assertEqual(len(pur.FLOW_STEPS), 7)
         self.assertEqual(state("draft")[0], "current")
-        self.assertEqual(state("submitted")[:3], ["done", "current", "todo"])
-        self.assertEqual(state("rfq_sent", rfq={"id": 1})[:3], ["done", "done", "current"])
-        self.assertEqual(state("for_approval", rfq={"id": 1}, has_open=False)[3], "current")
+        self.assertEqual(state("pending_owner")[:3], ["done", "current", "todo"])        # owner approves the REF
+        self.assertEqual(state("submitted")[:4], ["done", "done", "current", "todo"])    # then the RFQ
+        self.assertEqual(state("rfq_sent", rfq={"id": 1})[:4], ["done", "done", "done", "current"])
+        self.assertEqual(state("for_approval", rfq={"id": 1}, has_open=False)[4], "current")   # owner picks the PO
         self.assertEqual(set(state("closed")), {"done"})
+        owner = pur.ref_flow(dict(base, status="pending_owner"), "owner")["next"]
+        manager = pur.ref_flow(dict(base, status="pending_owner"), "warehouse_manager")["next"]
+        self.assertIn("Approve or reject", owner)
+        self.assertIn("Waiting for the owner", manager)
         self.assertIsNone(pur.ref_flow(dict(base, status="cancelled")))
 
     def test_a_pressed_button_cannot_be_pressed_twice(self):
@@ -614,6 +633,191 @@ class RfqDocumentTests(Base):
         self.assertIn("is-loading", js)
         self.assertIn("data-submitting", js)
         self.assertNotIn("disabled = true", js)       # a disabled button would drop name=action from the request
+
+
+class OwnerApprovesRefTests(Base):
+    """Order of work: warehouse manager submits the REF -> owner approves it -> RFQ -> quotes ->
+    owner decides the supplier (PO)."""
+
+    def status(self):
+        return self.be.one("SELECT status FROM replenishments ORDER BY id DESC LIMIT 1")["status"]
+
+    def waiting_ref(self):
+        self.make_ref(approved=False)
+        return self.ref_id()
+
+    def test_a_submitted_ref_waits_for_the_owner_and_cannot_get_an_rfq_yet(self):
+        ref_id = self.waiting_ref()
+        self.assertEqual(self.status(), "pending_owner")
+        self.login("whmgr")
+        r = self.c.post("/purchasing/ref/%d/rfq/new" % ref_id, data={"supplier_ids[]": [str(SUP_A)]})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("owner has not approved", " ".join(self.flashes(r)))
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM rfqs")["n"], 0)
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("Waiting for owner", page)
+        self.assertNotIn("Create RFQ", page)                          # no RFQ button before approval
+        self.assertNotIn("Choose suppliers", page)
+        self.assertIn("Cancel REF", page)                             # but the manager can still withdraw it
+        self.assertEqual(self.c.get("/purchasing/ref/%d/compare" % ref_id).status_code, 302)   # sent back to the list
+
+    def test_the_owner_approves_signs_and_the_manager_can_then_send_the_rfq(self):
+        ref_id = self.waiting_ref()
+        self.login("owner")
+        page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+        self.assertIn("Your decision", page)
+        self.assertIn(">Approve &amp; sign</button>", page)
+        r = self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "approve_ref", "remarks": "go ahead"})
+        self.assertEqual(r.status_code, 302)
+        row = self.be.one("SELECT * FROM replenishments WHERE id = :i", i=ref_id)
+        self.assertEqual((row["status"], row["owner_decided_by"], row["owner_remarks"]),
+                         ("submitted", self.uid["owner"], "go ahead"))
+        slots = {s["slot"]: s["signer_name"] for s in
+                 self.be.all("SELECT slot, signer_name FROM document_signatures WHERE doc_type = 'REF'")}
+        self.assertEqual(slots, {"prepared_by": "whmgr", "approved_by": "owner"})
+        self.login("whmgr")
+        self.assertIn("Create RFQ", self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True))
+        self.assertEqual(self.send_rfq(ref_id).status_code, 302)
+        self.assertEqual(self.status(), "rfq_sent")
+
+    def test_rejecting_needs_a_reason_and_cancels_the_ref(self):
+        ref_id = self.waiting_ref()
+        self.login("owner")
+        r = self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "reject_ref", "remarks": ""},
+                        follow_redirects=True)
+        self.assertIn("Write a reason", r.get_data(as_text=True))
+        self.assertEqual(self.status(), "pending_owner")
+        self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "reject_ref", "remarks": "Too much stock"})
+        row = self.be.one("SELECT * FROM replenishments WHERE id = :i", i=ref_id)
+        self.assertEqual(row["status"], "cancelled")
+        self.assertIn("Too much stock", row["cancel_reason"])
+        self.assertEqual(self.be.one("SELECT COUNT(*) AS n FROM document_signatures WHERE slot = 'approved_by'")["n"], 0)
+
+    def test_only_the_owner_decides_and_only_once(self):
+        ref_id = self.waiting_ref()
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "approve_ref"})
+        self.assertEqual(self.status(), "pending_owner")             # the manager cannot approve their own REF
+        self.owner_approves_ref(ref_id)
+        r = self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "reject_ref", "remarks": "changed my mind"},
+                        follow_redirects=True)
+        self.assertIn("not waiting for your approval", r.get_data(as_text=True))
+        self.assertEqual(self.status(), "submitted")
+
+    def test_the_owner_finds_waiting_refs_in_approvals_the_badge_and_the_tile(self):
+        ref_id = self.waiting_ref()
+        self.login("owner")
+        page = self.c.get("/purchasing/approvals").get_data(as_text=True)
+        self.assertIn("Replenishment forms waiting for your approval", page)
+        self.assertIn("/purchasing/ref/%d" % ref_id, page)
+        home = self.c.get("/").get_data(as_text=True)
+        self.assertIn("1 waiting", home)
+        self.owner_approves_ref(ref_id)
+        page = self.c.get("/purchasing/approvals").get_data(as_text=True)
+        self.assertNotIn("Replenishment forms waiting for your approval", page)
+
+    def test_refs_that_were_already_submitted_before_this_rule_keep_working(self):
+        self.make_ref(approved=False)
+        ref_id = self.ref_id()
+        # A REF submitted before this rule is already 'submitted' with nobody recorded as approving it.
+        self.be.execute("UPDATE replenishments SET status = 'submitted' WHERE id = :i", i=ref_id)
+        self.be.commit()
+        self.assertIsNone(self.be.one("SELECT owner_decided_by FROM replenishments")["owner_decided_by"])
+        self.assertEqual(self.send_rfq(ref_id).status_code, 302)      # nothing in flight is blocked
+        self.assertEqual(self.status(), "rfq_sent")
+
+
+class SupplierComparisonTests(Base):
+    """Choosing suppliers: offers side by side with medals, and the owner sees what was passed over."""
+
+    def two_offers(self):
+        """Item A x20: Sup A quotes 10.00 (7 days), Sup B quotes 12.00 (3 days)."""
+        self.make_ref(qty=20)
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])
+        self.quote(ref_id, SUP_B, lines=[(A, 20, "12.00", 3)])
+        return ref_id
+
+    def test_offers_are_ranked_by_price_with_a_fastest_label(self):
+        ref_id = self.two_offers()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("medal medal-1", page)
+        self.assertIn("medal medal-2", page)
+        self.assertIn("Lowest price", page)
+        self.assertIn("Fastest", page)                               # Sup B: 3 days against 7
+        self.assertIn("+2.00", page)                                 # Sup B is 2.00 above the lowest
+        self.assertIn('class="offers-head"', page)
+        for heading in ("Unit price", "vs lowest", "Can supply", "Lead time", "Valid until", "Total"):
+            self.assertIn(">%s<" % heading, page)
+        self.assertLess(page.index("Sup A"), page.index("Sup B"))    # cheapest first
+
+    def test_a_single_offer_gets_no_medal(self):
+        from app import purchasing_ops as pur
+        opts = [{"unit_price": "12.00", "lead": 3, "max_qty": 20, "expired": False, "supplier_name": "Only"}]
+        pur._annotate_offers(opts, 20)
+        self.assertIsNone(opts[0]["rank"])                           # nothing to be lowest of
+        self.assertTrue(opts[0]["only_offer"])
+        self.assertFalse(opts[0]["fastest"])
+
+    def test_a_short_offer_says_by_how_much(self):
+        self.make_ref(qty=20)
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_B, lines=[(A, 8, "12.00", 3)])
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("Short by 12", page)
+        self.assertIn("short by 12, the rest stays open", page)
+
+    def test_equal_prices_share_a_medal_and_nothing_is_fastest_when_lead_times_match(self):
+        from app import purchasing_ops as pur
+        opts = [{"unit_price": "10.00", "lead": 5, "max_qty": 20, "expired": False, "supplier_name": "X"},
+                {"unit_price": "10.00", "lead": 5, "max_qty": 20, "expired": False, "supplier_name": "Y"},
+                {"unit_price": "15.00", "lead": 5, "max_qty": 20, "expired": False, "supplier_name": "Z"}]
+        pur._annotate_offers(opts, 20)
+        self.assertEqual([o["rank"] for o in opts], [1, 1, 2])
+        self.assertFalse(any(o["fastest"] for o in opts))
+        self.assertEqual(opts[2]["above"], "5.00")
+        self.assertEqual(opts[2]["above_pct"], 50)
+
+    def test_an_expired_offer_is_listed_last_with_no_medal(self):
+        from app import purchasing_ops as pur
+        opts = [{"unit_price": "5.00", "lead": 1, "max_qty": 20, "expired": True, "supplier_name": "Old"},
+                {"unit_price": "9.00", "lead": 4, "max_qty": 20, "expired": False, "supplier_name": "New"}]
+        pur._annotate_offers(opts, 20)
+        self.assertEqual([o["supplier_name"] for o in opts], ["New", "Old"])
+        self.assertIsNone(opts[1]["rank"])
+        self.assertTrue(opts[0]["only_offer"])
+
+    def test_the_page_says_the_owner_decides(self):
+        ref_id = self.two_offers()
+        self.login("whmgr")
+        page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
+        self.assertIn("You recommend, the owner decides", page)
+        self.assertIn(">Send for approval</button>", page)
+
+    def test_the_owner_sees_how_the_chosen_price_compares_and_what_was_passed_over(self):
+        ref_id = self.two_offers()
+        ids = self.line_ids(ref_id)
+        self.login("whmgr")
+        # the manager recommends the dearer, faster supplier
+        self.c.post("/purchasing/ref/%d/compare" % ref_id,
+                    data={"choice_%d" % ids[A]: "q:%d" % self.be.one(
+                        "SELECT id FROM quotations WHERE supplier_id = :s", s=SUP_B)["id"]})
+        self.login("owner")
+        aid = self.be.one("SELECT id FROM purchase_approvals ORDER BY id LIMIT 1")["id"]
+        page = self.c.get("/purchasing/approvals/%d" % aid).get_data(as_text=True)
+        self.assertIn("The decision is yours", page)
+        self.assertIn("How this compares", page)
+        self.assertIn("2nd lowest", page)                            # Sup B is second on price
+        self.assertIn("Fastest", page)
+        self.assertIn("2 offers compared", page)
+        self.assertIn("Cheaper offers not chosen", page)
+        passed_over = page.split("Cheaper offers not chosen")[1]
+        self.assertIn("Sup A", passed_over)                           # the cheaper supplier that was not picked
+        self.assertIn("10.00", passed_over)
 
 
 class ApprovalTests(Base):
@@ -1043,7 +1247,7 @@ class SplitOrderingTests(Base):
         self.mixed_quotes(ref_id)                                     # Sup A has B, Sup B has A
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
-        self.assertLess(page.index("data-bulk-bar"), page.index('<table class="data"'))
+        self.assertLess(page.index("data-bulk-bar"), page.index('<section class="item-card"'))
         self.assertIn("data-bulk-cheapest", page)
         # Sup A covers everything once the agreed price for A is added to their quotation for B
         self.assertRegex(page, r'data-bulk-supplier="%d">\s*Sup A <span class="muted">'

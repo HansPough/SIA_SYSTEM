@@ -18,10 +18,10 @@ from .inventory_service import InventoryError
 
 PAGE_SIZE = 50
 ALERT_STATUSES = ("active", "completed", "dismissed")
-REF_STATUSES = ("draft", "submitted", "rfq_sent", "for_approval", "approved",
+REF_STATUSES = ("draft", "pending_owner", "submitted", "rfq_sent", "for_approval", "approved",
                 "receiving", "closed", "cancelled")
 PO_STATUSES = ("draft", "sent", "partially_received", "received", "cancelled")
-CANCELABLE_REF = ("draft", "submitted", "rfq_sent")
+CANCELABLE_REF = ("draft", "pending_owner", "submitted", "rfq_sent")
 
 
 def _b():
@@ -387,12 +387,12 @@ def create_ref(user, warehouse_id, remarks, pairs, submit, alert_id=None):
     if len(remarks) > 500:
         raise InventoryError("Remarks can be at most 500 characters.")
 
-    status = "submitted" if submit else "draft"
+    status = "pending_owner" if submit else "draft"      # the owner approves it before any RFQ
     ref_no = inv.next_doc_no("REF")
     row = _b().one(
         "INSERT INTO replenishments (ref_no, warehouse_id, notification_id, status, created_by, remarks, submitted_at) "
         "VALUES (:no, :w, :n, :st, :u, :rem, "
-        "CASE WHEN :st = 'submitted' THEN CURRENT_TIMESTAMP ELSE NULL END) RETURNING id",
+        "CASE WHEN :st = 'pending_owner' THEN CURRENT_TIMESTAMP ELSE NULL END) RETURNING id",
         no=ref_no, w=warehouse_id, n=alert_id, st=status, u=user["id"], rem=remarks or None)
     ref_id = row["id"]
     for item_id, line in lines.items():
@@ -415,13 +415,67 @@ def submit_ref(user, ref_id):
         raise InventoryError("This form is already %s." % ref["status"].replace("_", " "))
     if _b().one("SELECT COUNT(*) AS n FROM replenishment_items WHERE ref_id = :r", r=ref_id)["n"] == 0:
         raise InventoryError("This form has no items.")
-    _b().execute("UPDATE replenishments SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP "
+    _b().execute("UPDATE replenishments SET status = 'pending_owner', submitted_at = CURRENT_TIMESTAMP "
                  "WHERE id = :i", i=ref_id)
     items = _b().all("SELECT item_id FROM replenishment_items WHERE ref_id = :r", r=ref_id)
     _complete_alert(user["id"], ref["notification_id"], [r["item_id"] for r in items])
     inv.write_audit(user["id"], "submit", "replenishments", ref_id,
-                    old={"status": "draft"}, new={"status": "submitted", "ref_no": ref["ref_no"]})
+                    old={"status": "draft"}, new={"status": "pending_owner", "ref_no": ref["ref_no"]})
     return ref["ref_no"]
+
+
+def _ref_for_owner(user, ref_id):
+    ref = _b().one("SELECT * FROM replenishments WHERE id = :i", i=ref_id)
+    if ref is None:
+        raise InventoryError("Replenishment form not found.")
+    if user["role"] != "owner":
+        raise InventoryError("Only the owner can approve or reject a replenishment form.")
+    if ref["status"] != "pending_owner":
+        raise InventoryError("%s is not waiting for your approval (it is %s)."
+                             % (ref["ref_no"], ref["status"].replace("_", " ")))
+    return ref
+
+
+def approve_ref(user, ref_id, remarks=None):
+    """The owner says yes to the REF. The warehouse manager can now send the RFQ."""
+    ref = _ref_for_owner(user, ref_id)
+    remarks = (remarks or "").strip()
+    if len(remarks) > 300:
+        raise InventoryError("Remarks can be at most 300 characters.")
+    _b().execute("UPDATE replenishments SET status = 'submitted', owner_decided_by = :u, "
+                 "owner_decided_at = CURRENT_TIMESTAMP, owner_remarks = :r WHERE id = :i",
+                 u=user["id"], r=remarks or None, i=ref_id)
+    inv.write_audit(user["id"], "approve", "replenishments", ref_id,
+                    old={"status": "pending_owner"}, new={"status": "submitted", "ref_no": ref["ref_no"]})
+    return ref["ref_no"]
+
+
+def reject_ref(user, ref_id, remarks):
+    """The owner says no. The REF is cancelled with the owner's reason (a reason is required)."""
+    ref = _ref_for_owner(user, ref_id)
+    remarks = (remarks or "").strip()
+    if not remarks:
+        raise InventoryError("Write a reason when rejecting a replenishment form.")
+    if len(remarks) > 300:
+        raise InventoryError("The reason can be at most 300 characters.")
+    _b().execute("UPDATE replenishments SET status = 'cancelled', cancel_reason = :c, owner_decided_by = :u, "
+                 "owner_decided_at = CURRENT_TIMESTAMP, owner_remarks = :r, closed_at = CURRENT_TIMESTAMP "
+                 "WHERE id = :i", c="Rejected by the owner: " + remarks, u=user["id"], r=remarks, i=ref_id)
+    inv.write_audit(user["id"], "reject", "replenishments", ref_id,
+                    old={"status": "pending_owner"}, new={"status": "cancelled", "reason": remarks})
+    return ref["ref_no"]
+
+
+def list_refs_to_approve(user):
+    """REFs waiting for the owner, oldest first. Empty for anyone else."""
+    if user["role"] != "owner":
+        return []
+    return _b().all(
+        "SELECT r.id, r.ref_no, r.submitted_at, w.code AS warehouse, u.full_name AS created_by_name, "
+        "(SELECT COUNT(*) FROM replenishment_items x WHERE x.ref_id = r.id) AS n_items, "
+        "(SELECT COALESCE(SUM(x.qty_requested), 0) FROM replenishment_items x WHERE x.ref_id = r.id) AS n_qty "
+        "FROM replenishments r JOIN locations w ON w.id = r.warehouse_id JOIN users u ON u.id = r.created_by "
+        "WHERE r.status = 'pending_owner' ORDER BY r.submitted_at, r.id")
 
 
 def can_cancel(user, ref):
@@ -484,6 +538,8 @@ def create_rfq(user, ref_id, supplier_ids, deadline, terms):
         if not cov.open_lines(ref_id):
             raise InventoryError("Every item is already ordered, waiting for approval, or dropped. "
                                  "There is nothing left to ask suppliers about.")
+    elif ref["status"] == "pending_owner":
+        raise InventoryError("The owner has not approved this REF yet. You can send the RFQ once they do.")
     elif ref["status"] != "submitted":
         raise InventoryError("Submit the REF before sending an RFQ.")
     ids = []
@@ -572,48 +628,54 @@ def next_supplier_to_quote(ref_id, current_supplier_id):
     return row["supplier_id"] if row else None
 
 
-FLOW_STEPS = ("REF", "RFQ", "Quotes", "Approval", "Purchase order", "Receiving")
+FLOW_STEPS = ("REF", "REF approval", "RFQ", "Quotes", "PO approval", "Purchase order", "Receiving")
 
 
-def ref_flow(ref):
-    """Where a REF is on its way from request to goods: the six steps, which are done, and one
-    sentence saying what to do next. None for a cancelled REF (it has no path any more)."""
+def ref_flow(ref, role=None):
+    """Where a REF is on its way from request to goods: the seven steps, which are done, and one
+    sentence saying what to do next (worded for the viewer's role). None for a cancelled REF.
+
+    The owner decides twice: first whether to buy at all (REF approval), then which supplier
+    gets the order (PO approval). The warehouse manager does everything in between."""
     status = ref["status"]
     if status == "cancelled":
         return None
+    owner = role == "owner"
     live_pos = [p for p in ref.get("pos", []) if p["status"] != "cancelled"]
     if status == "draft":
         cur, nxt = 0, "Sign and submit this REF."
+    elif status == "pending_owner":
+        cur = 1
+        nxt = ("Approve or reject this replenishment form. The RFQ goes out after you approve."
+               if owner else "Waiting for the owner to approve this REF. You can send the RFQ once they do.")
     elif status == "closed":
         cur, nxt = len(FLOW_STEPS), "Everything has been received."
     elif status == "receiving":
-        cur, nxt = 5, "Goods are arriving. Record each delivery under Supplier receiving."
+        cur, nxt = 6, "Goods are arriving. Record each delivery under Supplier receiving."
     elif status == "approved":
         if any(p["status"] == "draft" for p in live_pos):
-            cur, nxt = 4, "Send the purchase order to the supplier."
+            cur, nxt = 5, "Send the purchase order to the supplier."
         else:
-            cur, nxt = 4, "Wait for the supplier's delivery, then record it under Supplier receiving."
+            cur, nxt = 5, "Wait for the supplier's delivery, then record it under Supplier receiving."
     elif status == "for_approval":
-        cur, nxt = 3, "The owner is deciding. You will be notified."
+        cur = 4
+        nxt = ("Review the suppliers chosen and decide on each one." if owner
+               else "The owner is deciding which suppliers get the order. You will be notified.")
     elif not ref.get("rfq"):
-        cur, nxt = 1, "Create an RFQ, or choose a regular supplier's agreed price."
+        cur, nxt = 2, "Approved. Send an RFQ to suppliers, or choose a regular supplier's agreed price."
     else:
         replied = any(r["replied_at"] for r in ref.get("rfq_rows", []))
         if ref.get("has_open"):
-            cur = 2
+            cur = 3
             nxt = ("Choose suppliers, or record more replies first." if replied
                    else "Send the RFQ, then record each supplier's reply.")
         else:
-            cur, nxt = 3, "Waiting for the owner."
+            cur, nxt = 4, "Waiting for the owner."
     steps = [{"label": label,
               "state": "done" if i < cur else "current" if i == cur else "todo"}
              for i, label in enumerate(FLOW_STEPS)]
     return {"steps": steps, "next": nxt}
 
-
-# ---------------------------------------------------------------------
-# Quotations
-# ---------------------------------------------------------------------
 
 def _ref_rfq(ref_id):
     return _b().one("SELECT * FROM rfqs WHERE ref_id = :r ORDER BY id DESC LIMIT 1", r=ref_id)
@@ -843,6 +905,61 @@ def _valid_agreed_price(supplier_id, item_id, on_date=None):
         s=supplier_id, i=item_id, d=on_date)
 
 
+def _annotate_offers(options, need):
+    """Plain numbers and medals for comparing the offers on one line, in place. Display only: it
+    never changes which offer is pre-selected.
+
+    * rank 1/2/3: gold, silver, bronze by unit price (equal prices share a medal). Only given when
+      there are at least two different prices to compare.
+    * fastest: the shortest stated lead time, only when the offers state different lead times.
+    * covers / short / total: whether the offer covers the quantity needed, and what that costs.
+    * above: how much more than the lowest price it is.
+    Offers are listed cheapest first, expired ones last."""
+    usable = [o for o in options if not o["expired"]]
+    prices = sorted({_dec(o["unit_price"]) for o in usable})
+    medal = {p: i + 1 for i, p in enumerate(prices[:3])} if len(prices) > 1 else {}
+    leads = [o["lead"] for o in usable if o["lead"] is not None]
+    best_lead = min(leads) if len(set(leads)) > 1 else None
+    low = prices[0] if prices else None
+    for o in options:
+        price = _dec(o["unit_price"])
+        o["covers"] = o["max_qty"] >= need
+        o["short"] = max(0, need - o["max_qty"])
+        o["supplies"] = min(o["max_qty"], need)
+        o["total"] = _price_text(_amount(o["supplies"], o["unit_price"]))
+        o["rank"] = None if o["expired"] else medal.get(price)
+        o["only_offer"] = (not o["expired"]) and len(usable) == 1
+        o["fastest"] = (not o["expired"]) and best_lead is not None and o["lead"] == best_lead
+        if low is not None and not o["expired"] and price > low:
+            o["above"] = _price_text(price - low)
+            o["above_pct"] = int(((price - low) / low * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        else:
+            o["above"] = o["above_pct"] = None
+    options.sort(key=lambda o: (o["expired"], _dec(o["unit_price"]), o["supplier_name"]))
+
+
+def _attach_comparison(row):
+    """For the owner: how each price chosen on this approval compares with every other offer on
+    the same REF line (quotations and agreed prices), so a dearer choice is visible at a glance."""
+    if not row["lines"]:
+        return
+    try:
+        probed = _line_options(row["ref_id"], [{"ref_item_id": l["ref_item_id"], "item_id": l["item_id"],
+                                                "open": l["qty"]} for l in row["lines"]])
+    except InventoryError:
+        return
+    for line, p in zip(row["lines"], probed):
+        paid = _price_text(line["unit_price"])
+        mine = next((o for o in p["options"]
+                     if o["supplier_id"] == row["supplier_id"] and o["unit_price"] == paid), None)
+        others = [o for o in p["options"] if not o["expired"] and o["supplier_id"] != row["supplier_id"]]
+        line["compare"] = {
+            "mine": mine,
+            "n_offers": len(others) + (1 if mine else 0),
+            "cheaper": [o for o in others if _dec(o["unit_price"]) < _dec(paid)][:3],
+        }
+
+
 def _line_options(ref_id, lines):
     """For each REF line that still needs a supplier: who offered it, how many, at what price."""
     today = _today()
@@ -850,7 +967,7 @@ def _line_options(ref_id, lines):
     unpriced = {}
     for row in _b().all(
             "SELECT qi.replenishment_item_id AS rid, qi.qty_offered, qi.unit_price, qi.lead_time_days, "
-            "q.id AS quotation_id, q.valid_until, s.id AS supplier_id, s.supplier_name "
+            "q.id AS quotation_id, q.valid_until, s.id AS supplier_id, s.supplier_name, s.is_regular "
             "FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id "
             "JOIN rfqs rq ON rq.id = q.rfq_id JOIN suppliers s ON s.id = q.supplier_id "
             "WHERE rq.ref_id = :r AND s.is_active AND qi.qty_offered > 0 "
@@ -864,6 +981,7 @@ def _line_options(ref_id, lines):
             "key": "q:%d" % row["quotation_id"], "kind": "quotation", "supplier_id": row["supplier_id"],
             "supplier_name": row["supplier_name"], "max_qty": row["qty_offered"],
             "unit_price": _price_text(row["unit_price"]), "lead": row["lead_time_days"],
+            "valid_until": str(valid) if valid else None, "regular": bool(row.get("is_regular")),
             "expired": bool(valid and valid < today)})
     regulars = _b().all("SELECT id, supplier_name FROM suppliers WHERE is_active AND is_regular "
                         "ORDER BY supplier_name")
@@ -879,7 +997,7 @@ def _line_options(ref_id, lines):
                 options.append({"key": "a:%d" % sup["id"], "kind": "agreed_price", "supplier_id": sup["id"],
                                 "supplier_name": sup["supplier_name"] + " (agreed price)",
                                 "max_qty": ln["open"], "unit_price": _price_text(price["agreed_price"]),
-                                "lead": None, "expired": False})
+                                "lead": None, "valid_until": None, "regular": True, "expired": False})
                 replaced.add(sup["id"])
         if replaced:
             # An expired quotation is no offer any more: show the agreed price in its place.
@@ -893,6 +1011,7 @@ def _line_options(ref_id, lines):
             pick = max(usable, key=lambda o: o["max_qty"])
         else:
             pick = None
+        _annotate_offers(options, ln["open"])
         ln["options"] = options
         ln["unpriced"] = unpriced.get(ln["ref_item_id"], [])
         ln["default"] = pick["key"] if pick else "open"
@@ -959,10 +1078,13 @@ def _bulk_suppliers(lines):
 def compare_data(ref_id, user):
     """Everything the 'choose suppliers' screen needs: each line still to order, with every offer."""
     ref = _ref_for_write(user, ref_id)
+    if ref["status"] == "pending_owner":
+        raise InventoryError("The owner has not approved this REF yet, so suppliers cannot be chosen.")
     coverage_lines = cov.coverage(ref_id)
     open_ = _line_options(ref_id, [dict(c) for c in coverage_lines if c["open"] > 0])
     done = [c for c in coverage_lines if c["open"] == 0]
     return {"ref": ref, "lines": open_, "done": done, "groups": _default_split(open_),
+            "has_medals": any(o["rank"] for l in open_ for o in l["options"]),
             "bulk": _bulk_suppliers(open_), "bulk_items": len(open_),
             "pending": _b().one("SELECT COUNT(*) AS n FROM purchase_approvals WHERE ref_id = :r "
                                 "AND decision = 'pending'", r=ref_id)["n"] > 0}
@@ -1263,6 +1385,7 @@ def get_approval(approval_id, user):
             "JOIN suppliers s ON s.id = pa.supplier_id LEFT JOIN quotations q ON q.id = pa.quotation_id "
             "WHERE pa.id = :i", i=i)
         row["lines"] = approval_lines(row)
+        _attach_comparison(row)
         row["total"] = _total_text(row["lines"])
         row["po"] = _b().one("SELECT id, po_no, status FROM purchase_orders WHERE approval_id = :a", a=i)
         appr["batch"].append(row)

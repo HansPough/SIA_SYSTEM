@@ -68,7 +68,7 @@ def refresh_status(ref_id):
     rfq_sent
     """
     ref = _b().one("SELECT id, status FROM replenishments WHERE id = :r", r=ref_id)
-    if ref is None or ref["status"] in ("draft", "closed", "cancelled"):
+    if ref is None or ref["status"] in ("draft", "pending_owner", "closed", "cancelled"):
         return ref["status"] if ref else None
     pending = _b().one("SELECT COUNT(*) AS n FROM purchase_approvals WHERE ref_id = :r AND decision = 'pending'",
                        r=ref_id)["n"]

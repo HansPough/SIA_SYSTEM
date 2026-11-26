@@ -7,6 +7,30 @@
   {{ m.status(ref.status) }}
 </div>
 {{ m.stepper(flow) }}
+{% if current_role == 'owner' and ref.status == 'pending_owner' %}
+<form method="post" class="card decision no-print">
+  <h2 style="margin-top:0">Your decision</h2>
+  <p class="muted">Approving signs this REF with your signature and lets the warehouse manager ask suppliers for prices.
+    Nothing is ordered yet: you choose the supplier later, once the prices are in.</p>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>Requested items</th><th class="num">Qty</th></tr></thead>
+    <tbody>
+    {% for l in ref.lines %}<tr><td>{{ l.item_name }}<small>{{ l.item_code }}</small></td><td class="num">{{ l.qty_requested }}</td></tr>{% endfor %}
+    <tr><td class="num"><strong>Total units</strong></td><td class="num"><strong>{{ ref.lines|sum(attribute='qty_requested') }}</strong></td></tr>
+    </tbody>
+  </table></div>
+  {% if ref.remarks %}<p><strong>Warehouse remarks:</strong> {{ ref.remarks }}</p>{% endif %}
+  <div class="grid">
+    {{ m.field('Remarks', 'remarks', 'textarea', value='', col=2, help='Optional when approving. Required when rejecting.') }}
+  </div>
+  {{ m.signing_box('Approving signs the REF with your signature. Rejecting cancels it and signs nothing.') }}
+  <div class="actions">
+    <span class="spacer"></span>
+    <button type="submit" name="action" value="reject_ref" class="btn danger">Reject</button>
+    <button type="submit" name="action" value="approve_ref" class="btn primary">{{ m.icon('pen') }}Approve &amp; sign</button>
+  </div>
+</form>
+{% endif %}
 <div class="doc-split">
 <div class="doc-main">
 {% set d = load_document('REF', ref.id) %}

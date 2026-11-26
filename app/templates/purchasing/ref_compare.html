@@ -23,50 +23,70 @@
   {% endfor %}
 </div>
 {% endif %}
-<div class="table-wrap"><table class="data">
-<thead><tr><th>Item</th><th>Order from</th><th class="num">Qty to order</th><th class="num">Subtotal</th></tr></thead>
-<tbody>
+<div class="note">
+  <strong>You recommend, the owner decides.</strong> Pick a supplier for each item. Nothing is ordered until the owner
+  approves it, and each approved supplier then gets one purchase order.
+  {% if data.has_medals %}<span class="muted">Medals rank the unit prices for each item: {{ m.medal(1) }} {{ m.medal(2) }} {{ m.medal(3) }}</span>{% endif %}
+</div>
+
 {% for l in data.lines %}
-<tr data-item-row data-open="{{ l.open }}">
-  <td>{{ l.item_name }}<small class="muted">{{ l.item_code }}</small>
-    {% if l.on_po or l.qty_dropped %}<small class="muted">requested {{ l.qty_requested }}{% if l.on_po %}, ordered {{ l.on_po }}{% endif %}{% if l.qty_dropped %}, dropped {{ l.qty_dropped }}{% endif %}</small>{% endif %}</td>
-  <td>
+<section class="item-card" data-item-row data-open="{{ l.open }}">
+  <header class="item-card-head">
+    <div class="item-title">
+      <h3>{{ l.item_name }} <small class="muted">{{ l.item_code }}</small></h3>
+      <p class="item-need"><span class="need-pill">Need {{ l.open }}</span>
+        <span class="muted">requested {{ l.qty_requested }}{% if l.on_po %} &middot; ordered {{ l.on_po }}{% endif %}{% if l.qty_dropped %} &middot; dropped {{ l.qty_dropped }}{% endif %}</span></p>
+    </div>
+    <div class="item-order qty-cell">
+      <label for="qty_{{ l.ref_item_id }}">Order</label>
+      <input type="number" min="1" max="{{ l.qty_default }}" id="qty_{{ l.ref_item_id }}" name="qty_{{ l.ref_item_id }}"
+             value="{{ l.qty_default }}" {{ 'disabled' if l.default == 'open' }}>
+      <span class="muted">of {{ l.open }}</span>
+      <span class="item-subtotal">Subtotal <strong class="subtotal" data-subtotal>{% if l.subtotal is not none %}{{ l.subtotal|money }}{% else %}&ndash;{% endif %}</strong></span>
+    </div>
+  </header>
+
+  <div class="offers" role="radiogroup" aria-label="Offers for {{ l.item_name }}">
+    {% if l.options %}
+    <div class="offers-head" aria-hidden="true">
+      <span></span><span>Supplier</span><span class="num">Unit price</span><span class="num">vs lowest</span>
+      <span class="num">Can supply</span><span class="num">Lead time</span><span>Valid until</span><span class="num">Total</span>
+    </div>
+    {% endif %}
     {% for o in l.options %}
-    <label class="choice {{ 'muted' if o.expired }}">
+    <label class="offer {{ 'is-expired' if o.expired }}">
       <input type="radio" name="choice_{{ l.ref_item_id }}" value="{{ o.key }}"
              data-supplier-id="{{ o.supplier_id }}" data-supplier="{{ o.supplier_name }}"
              data-basis="{{ o.kind }}" data-item="{{ l.item_name }}"
              data-price="{{ o.unit_price }}"
              data-qty="{{ o.max_qty if o.max_qty < l.open else l.open }}"
              {{ 'checked' if l.default == o.key and not o.expired }} {{ 'disabled' if o.expired }}>
-      <strong>{{ o.supplier_name }}</strong>
-      &mdash; {{ o.unit_price|money }} each, can supply {{ o.max_qty }}{% if o.max_qty < l.open %} (short by {{ l.open - o.max_qty }}, the rest stays open){% endif %}{% if o.lead %}, {{ o.lead }} day(s){% endif %}
-      {% if o.expired %}<span class="badge s-warn">expired</span>{% endif %}
+      <span class="offer-who"><strong>{{ o.supplier_name }}</strong><span class="chips">{{ m.offer_chips(o) }}</span></span>
+      <span class="num" data-label="Unit price"><strong>{{ o.unit_price|money }}</strong></span>
+      <span class="num" data-label="vs lowest">{% if o.above %}+{{ o.above|money }} <small>({{ o.above_pct }}%)</small>{% elif o.rank == 1 %}<span class="ok-text">Lowest</span>{% else %}&ndash;{% endif %}</span>
+      <span class="num" data-label="Can supply">{{ o.max_qty }}{% if not o.covers %} <small>short by {{ o.short }}, the rest stays open</small>{% endif %}</span>
+      <span class="num" data-label="Lead time">{% if o.lead is not none %}{{ o.lead }} day{{ 's' if o.lead != 1 }}{% else %}&ndash;{% endif %}</span>
+      <span data-label="Valid until">{{ o.valid_until or '–' }}</span>
+      <span class="num" data-label="Total"><strong>{{ o.total|money }}</strong></span>
     </label>
     {% else %}
-    <small class="muted">No supplier has quoted this item yet.
-      <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers</a></small>
+    <p class="offers-empty muted">No supplier has quoted this item yet.
+      <a href="{{ url_for('purchasing.rfq_new', ref_id=data.ref.id) }}">Ask more suppliers</a></p>
     {% endfor %}
     {% if l.unpriced %}
-    <small class="muted">{{ l.unpriced|join(', ') }} replied without a price, so it cannot be ordered —
-      <a href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">record the quotation again</a>.</small>
+    <p class="offers-empty muted">{{ l.unpriced|join(', ') }} replied without a price, so it cannot be ordered &mdash;
+      <a href="{{ url_for('purchasing.quotation_new', ref_id=data.ref.id) }}">record the quotation again</a>.</p>
     {% endif %}
-    <label class="choice"><input type="radio" name="choice_{{ l.ref_item_id }}" value="open" data-supplier-id=""
+    <label class="offer offer-open">
+      <input type="radio" name="choice_{{ l.ref_item_id }}" value="open" data-supplier-id=""
              data-supplier="Keep open" data-basis="" data-item="{{ l.item_name }}"
              {{ 'checked' if l.default == 'open' }}>
-      Not now: keep it open (ask more suppliers, order it later)</label>
-  </td>
-  <td class="num qty-cell">
-    <input type="number" min="1" max="{{ l.qty_default }}" id="qty_{{ l.ref_item_id }}" name="qty_{{ l.ref_item_id }}"
-           value="{{ l.qty_default }}" aria-label="Quantity to order for {{ l.item_name }}"
-           {{ 'disabled' if l.default == 'open' }}>
-    <small class="muted">of {{ l.open }}</small>
-  </td>
-  <td class="num subtotal" data-subtotal>{% if l.subtotal is not none %}{{ l.subtotal|money }}{% else %}–{% endif %}</td>
-</tr>
+      <span class="offer-who"><strong>Not now: keep it open</strong>
+        <span class="muted">ask more suppliers, or order it later</span></span>
+    </label>
+  </div>
+</section>
 {% endfor %}
-</tbody>
-</table></div>
 
 <div class="card" id="split-preview">
 <h2 style="margin-top:0">What sending this does</h2>
@@ -136,7 +156,7 @@
   }
   function refresh() {
     var groups = {}, order = [], open = 0;
-    form.querySelectorAll("tr[data-item-row]").forEach(function (row) {
+    form.querySelectorAll("[data-item-row]").forEach(function (row) {
       var checked = row.querySelector("input[type=radio]:checked");
       var qty = row.querySelector("input[type=number]");
       var cell = row.querySelector("[data-subtotal]");
@@ -192,7 +212,7 @@
   form.addEventListener("change", function (event) {
     var target = event.target;
     if (target.matches("input[type=radio]")) {
-      var row = target.closest("tr[data-item-row]");
+      var row = target.closest("[data-item-row]");
       if (row) { applyOption(row, target); }
     }
     refresh();
@@ -203,7 +223,7 @@
     bar.addEventListener("click", function (event) {
       var btn = event.target.closest("button");
       if (!btn) { return; }
-      var rows = form.querySelectorAll("tr[data-item-row]");
+      var rows = form.querySelectorAll("[data-item-row]");
       if (btn.hasAttribute("data-bulk-cheapest")) {
         rows.forEach(function (row) {
           var offers = Array.prototype.filter.call(
