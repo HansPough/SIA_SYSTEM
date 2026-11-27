@@ -50,6 +50,12 @@ restock alert ──► REF (draft ─► submitted)
 | Suppliers list | `/purchasing/suppliers` | warehouse manager, owner |
 | Supplier new / edit (with agreed prices) | `/purchasing/suppliers/new`, `/<id>/edit` | warehouse manager |
 
+## RFQ replies and "waiting for you" alerts
+
+* **Replies area** (REF page and RFQ page, `purchasing/_rfq_replies.html`): one block per RFQ. The summary line shows `n of m replied`, the **lowest comparable quote** (with the supplier's name), the reply-by date and links to the RFQ and its PDF. Under it, one row per supplier with a column for each fact: **Supplier, Status, Sent, Replied, Items, Quote, Actions**. Quotes are right-aligned, bold, in tabular numbers with the peso sign (`peso` filter). Dates are short (`day` filter: "Nov 25"). A round with more than five suppliers starts folded; older rounds start folded too.
+* **"Lowest" only counts quotes that cover every item of the RFQ.** A supplier that quoted 1 of 2 items has a smaller total that cannot be compared, so it is flagged ("1 of 2") and never called lowest. A quote replaced by a later one shows as *Replaced*.
+* **Alerts for the warehouse manager** (sidebar badge and bell, same counts as the dashboard): **POs ready to send** (owner-approved POs not yet sent) on *Purchase orders (PO)*, and **REFs ready for RFQ** (owner-approved REFs with no RFQ yet) on *Replenishments (REF)*. Each disappears as soon as the manager acts. The owner is not shown these.
+
 ## Order of work: the owner decides twice (migration 021)
 
 1. The warehouse manager signs and submits the **REF**. Its status is **Waiting for owner** (`pending_owner`).
@@ -70,7 +76,7 @@ The screen shows one card per item with every offer in aligned columns: unit pri
 * **No order-quantity box.** The REF already fixes the quantity: each supplier is ordered everything still needed, or what it can cover. A line left open stays open for another round.
 * Each item card has three parts: its own numbers (requested, ordered, dropped, still needed), the offers table, and a footer with the selected supplier and subtotal.
 * The labels are display only. They never change which offer is pre-selected (the cheapest offer that covers the full quantity).
-* The owner's approval screen shows the same medal for each chosen price, how many offers were compared, and any **cheaper offers that were not chosen**.
+* **The owner's approval screen** shows, under each item, the chosen price against every other offer in one table: Supplier, Basis, Unit price, Lead time, Total for the quantity, and *Against chosen* (the difference in ₱ and %). If a cheaper offer was passed over, the table opens by itself ("2 cheaper offers not chosen"); if the chosen price is the lowest it stays folded ("Lowest of 3 offers"). A cheaper offer that cannot cover the quantity says by how much it falls short.
 
 ## RFQ document and button standard (migration 020)
 

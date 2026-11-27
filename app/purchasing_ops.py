@@ -303,6 +303,14 @@ def get_ref(ref_id, user):
         "FROM rfqs rq JOIN rfq_suppliers rs ON rs.rfq_id = rq.id "
         "JOIN suppliers s ON s.id = rs.supplier_id "
         "WHERE rq.ref_id = :r ORDER BY rq.id, s.supplier_name", r=ref_id)
+    by_rfq, order = {}, []
+    for r in head["rfq_rows"]:
+        if r["rfq_id"] not in by_rfq:
+            by_rfq[r["rfq_id"]] = []
+            order.append(r)
+        by_rfq[r["rfq_id"]].append(r)
+    n_items = _rfq_item_counts(list(by_rfq), ref_id)
+    head["rfq_rounds"] = [_rfq_round(first, by_rfq[first["rfq_id"]], n_items[first["rfq_id"]]) for first in order]
     head["approvals"] = _b().all(
         "SELECT pa.*, s.supplier_name FROM purchase_approvals pa JOIN suppliers s ON s.id = pa.supplier_id "
         "WHERE pa.ref_id = :r ORDER BY pa.id", r=ref_id)
@@ -581,6 +589,37 @@ def create_rfq(user, ref_id, supplier_ids, deadline, terms):
     return rfq_no, len(ids), rfq_id
 
 
+def _rfq_round(rfq, suppliers, n_items):
+    """One RFQ as the screens show it: its suppliers plus the numbers that let you scan it.
+
+    A quote only counts towards "lowest" when it covers every item of the RFQ; a supplier that quoted
+    two items out of three has a smaller total that cannot be compared with a full one."""
+    for s in suppliers:
+        s["n_items"] = n_items
+        s["covers_all"] = bool(s["quotation_id"]) and s["n_live_lines"] >= n_items
+        s["superseded"] = bool(s["quotation_id"]) and not s["n_live_lines"]
+        s["quoted"] = s["total_quoted"] if s["quotation_id"] and s["n_live_lines"] else None
+    comparable = [s for s in suppliers if s["covers_all"] and s["quoted"] is not None]
+    lowest = min(comparable, key=lambda s: _dec(s["quoted"]), default=None)
+    for s in suppliers:
+        s["is_lowest"] = bool(lowest) and s is lowest and len(comparable) > 0
+    return {"rfq_id": rfq["rfq_id"], "rfq_no": rfq["rfq_no"], "reply_deadline": rfq.get("reply_deadline"),
+            "suppliers": suppliers, "n_total": len(suppliers), "n_items": n_items,
+            "n_replied": sum(1 for s in suppliers if s["replied_at"]),
+            "lowest": lowest["quoted"] if lowest else None,
+            "lowest_supplier": lowest["supplier_name"] if lowest else None}
+
+
+def _rfq_item_counts(rfq_ids, ref_id):
+    """How many items each RFQ asked about (older RFQs without rfq_items fall back to the REF's items)."""
+    fallback = _b().one("SELECT COUNT(*) AS n FROM replenishment_items WHERE ref_id = :r", r=ref_id)["n"]
+    counts = {i: fallback for i in rfq_ids}
+    for r in _b().all("SELECT rfq_id, COUNT(*) AS n FROM rfq_items GROUP BY rfq_id"):
+        if r["rfq_id"] in counts:
+            counts[r["rfq_id"]] = r["n"]
+    return counts
+
+
 def get_rfq(rfq_id, user):
     """One RFQ with its items and suppliers, or None (missing, or not this user's warehouse)."""
     rq = _b().one(
@@ -607,10 +646,14 @@ def get_rfq(rfq_id, user):
         "rs.sent_at, rs.replied_at, "
         "(SELECT q.id FROM quotations q WHERE q.rfq_id = rs.rfq_id AND q.supplier_id = s.id) AS quotation_id, "
         "(SELECT q.total_amount FROM quotations q WHERE q.rfq_id = rs.rfq_id AND q.supplier_id = s.id) "
-        "AS total_quoted "
+        "AS total_quoted, "
+        "(SELECT COUNT(*) FROM quotation_items qi JOIN quotations q ON q.id = qi.quotation_id "
+        " WHERE q.rfq_id = rs.rfq_id AND q.supplier_id = s.id AND qi.superseded_at IS NULL) AS n_live_lines "
         "FROM rfq_suppliers rs JOIN suppliers s ON s.id = rs.supplier_id "
         "WHERE rs.rfq_id = :r ORDER BY s.supplier_name", r=rfq_id)
-    rq["n_replied"] = sum(1 for s in rq["suppliers"] if s["replied_at"])
+    rq["round"] = _rfq_round({"rfq_id": rq["id"], "rfq_no": rq["rfq_no"], "reply_deadline": rq["reply_deadline"]},
+                             rq["suppliers"], len(rq["items"]))
+    rq["n_replied"] = rq["round"]["n_replied"]
     rq["is_latest"] = bool(_b().one(
         "SELECT 1 AS x FROM rfqs WHERE ref_id = :r AND id > :i LIMIT 1", r=rq["ref_id"], i=rfq_id) is None)
     return rq
@@ -948,8 +991,10 @@ def _annotate_offers(options, need):
 
 
 def _attach_comparison(row):
-    """For the owner: how each price chosen on this approval compares with every other offer on
-    the same REF line (quotations and agreed prices), so a dearer choice is visible at a glance."""
+    """For the owner: every offer on each line of this approval next to the price that was chosen.
+
+    Each offer carries its own total at the quantity ordered and how far it is from the chosen price,
+    so a cheaper alternative that was passed over shows up as a number, not a sentence."""
     if not row["lines"]:
         return
     try:
@@ -958,15 +1003,31 @@ def _attach_comparison(row):
     except InventoryError:
         return
     for line, p in zip(row["lines"], probed):
-        paid = _price_text(line["unit_price"])
-        mine = next((o for o in p["options"]
-                     if o["supplier_id"] == row["supplier_id"] and o["unit_price"] == paid), None)
-        others = [o for o in p["options"] if not o["expired"] and o["supplier_id"] != row["supplier_id"]]
-        line["compare"] = {
-            "mine": mine,
-            "n_offers": len(others) + (1 if mine else 0),
-            "cheaper": [o for o in others if _dec(o["unit_price"]) < _dec(paid)][:3],
-        }
+        qty, paid = line["qty"], _dec(line["unit_price"])
+        offers = []
+        for o in (o for o in p["options"] if not o["expired"]):
+            chosen = o["supplier_id"] == row["supplier_id"] and _dec(o["unit_price"]) == paid
+            offers.append(_offer_vs_chosen(o["supplier_name"].replace(" (agreed price)", ""),
+                                           o["kind"] == "agreed_price", o["unit_price"],
+                                           o["lead"], o["max_qty"], qty, paid, chosen))
+        if not any(o["chosen"] for o in offers):
+            # The chosen price is no longer a live offer (the quotation was replaced): still show what was chosen.
+            offers.append(_offer_vs_chosen(row["supplier_name"], row.get("basis") == "agreed_price",
+                                           _price_text(paid), None, qty, qty, paid, True))
+        offers.sort(key=lambda o: (_dec(o["unit_price"]), not o["chosen"], o["supplier_name"]))
+        cheaper = sum(1 for o in offers if o["cheaper"])
+        line["compare"] = {"offers": offers, "n_offers": len(offers), "n_cheaper": cheaper,
+                           "only_offer": len(offers) == 1}
+
+
+def _offer_vs_chosen(name, agreed, price, lead, max_qty, qty, paid, chosen):
+    diff = _dec(price) - paid
+    return {"supplier_name": name, "agreed": agreed, "unit_price": _price_text(price), "lead": lead,
+            "max_qty": max_qty, "covers": max_qty >= qty, "short": max(0, qty - max_qty),
+            "total": _price_text(_amount(min(max_qty, qty), price)), "chosen": chosen,
+            "cheaper": diff < 0, "dearer": diff > 0,
+            "diff": _price_text(abs(diff)) if diff else None,
+            "diff_pct": int((abs(diff) / paid * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if diff and paid else None}
 
 
 def _line_options(ref_id, lines):

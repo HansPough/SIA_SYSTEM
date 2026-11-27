@@ -28,6 +28,7 @@ def summary(user):
         "open_discrepancies": 0, "active_alerts": 0, "incoming_deliveries": 0,
         "rf_queue": 0, "transfers_to_move": 0, "assigned_transfers": 0,
         "pos_waiting_delivery": 0, "my_pending_adjustments": 0, "active_restock_alerts": 0,
+        "pos_ready_to_send": 0, "refs_ready_for_rfq": 0,
     }
     if role == "owner":
         # Everything waiting for the owner's say: REFs to approve, and supplier choices to decide.
@@ -73,6 +74,15 @@ def summary(user):
             "SELECT COUNT(*) AS n FROM purchase_orders po "
             "JOIN replenishments r ON r.id = po.ref_id "
             "WHERE r.warehouse_id = :l AND po.status IN ('sent', 'partially_received')", l=loc)
+        # The owner has approved, and the next move is the warehouse manager's:
+        out["pos_ready_to_send"] = _count(          # a PO the owner approved that has not gone to the supplier
+            "SELECT COUNT(*) AS n FROM purchase_orders po "
+            "JOIN replenishments r ON r.id = po.ref_id "
+            "WHERE r.warehouse_id = :l AND po.status = 'draft'", l=loc)
+        out["refs_ready_for_rfq"] = _count(         # a REF the owner approved that has no RFQ yet
+            "SELECT COUNT(*) AS n FROM replenishments r "
+            "WHERE r.warehouse_id = :l AND r.status = 'submitted' "
+            "AND NOT EXISTS (SELECT 1 FROM rfqs q WHERE q.ref_id = r.id)", l=loc)
         out["open_discrepancies"] = _count(
             "SELECT COUNT(*) AS n FROM discrepancy_reports d "
             "JOIN purchase_orders po ON po.id = d.po_id "

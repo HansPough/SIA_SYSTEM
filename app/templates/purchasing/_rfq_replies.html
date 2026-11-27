@@ -1,0 +1,57 @@
+{#- How each RFQ is going: one row per supplier, every fact in its own column.
+    Needs: rounds (purchasing_ops._rfq_round), ref_id, can_quote, and optionally copies / picked.
+    copies=True adds the per-supplier "Copy" and "PDF" links (the RFQ page); picked marks the open copy. -#}
+{% macro replies_table(round, ref_id, can_quote, copies=False, picked=None) %}
+<table class="rr-table">
+  <caption class="sr-only">Suppliers asked to quote on {{ round.rfq_no }}</caption>
+  <thead><tr>
+    <th scope="col">Supplier</th><th scope="col">Status</th><th scope="col">Sent</th><th scope="col">Replied</th>
+    <th scope="col" class="num">Items</th><th scope="col" class="num">Quote</th><th scope="col" class="rr-actions-h">Actions</th>
+  </tr></thead>
+  <tbody>
+  {% for s in round.suppliers %}
+  <tr {% if picked == s.supplier_id %}class="is-picked" aria-current="true"{% endif %}>
+    <th scope="row"><span class="rr-name">{{ s.supplier_name }}</span>
+      {% if copies %}<span class="rr-sub">{{ [s.contact_person, s.email]|select|join(' · ') or 'No contact saved' }}</span>{% endif %}</th>
+    <td data-label="Status">{% if s.superseded %}<span class="rr-state is-muted">Replaced</span>
+        {% elif s.replied_at %}<span class="rr-state is-replied">Replied</span>
+        {% else %}<span class="rr-state is-waiting">No reply</span>{% endif %}</td>
+    <td class="rr-date" data-label="Sent">{{ s.sent_at|day }}</td>
+    <td class="rr-date" data-label="Replied">{{ s.replied_at|day }}</td>
+    <td class="num rr-items" data-label="Items">{% if s.quoted is not none %}<span class="{{ '' if s.covers_all else 'is-partial' }}">{{ s.n_live_lines }} of {{ s.n_items }}</span>{% else %}&ndash;{% endif %}</td>
+    <td class="num rr-quote" data-label="Quote">{% if s.quoted is not none %}<strong>{{ s.quoted|peso }}</strong>{% if s.is_lowest and round.n_replied > 1 %}<span class="rr-tag">Lowest</span>{% endif %}{% else %}<span class="rr-none">&ndash;</span>{% endif %}</td>
+    <td class="rr-actions">
+      {% if copies %}
+      <a class="rr-link" href="{{ url_for('purchasing.rfq_detail', ref_id=ref_id, rfq_id=round.rfq_id, supplier=s.supplier_id) }}">Copy</a>
+      <a class="rr-link" href="{{ url_for('documents.pdf', doc_type='RFQ', doc_id=round.rfq_id, supplier=s.supplier_id) }}" download>PDF</a>
+      {% endif %}
+      {% if can_quote %}<a class="rr-link is-main" href="{{ url_for('purchasing.quotation_new', ref_id=ref_id, supplier_id=s.supplier_id) }}">{{ 'Edit reply' if s.replied_at else 'Record reply' }}</a>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{#- Every round of the REF, newest open. A round with more than five suppliers starts folded so the page stays short. -#}
+{% macro replies_rounds(rounds, ref_id, can_quote) %}
+{% for rd in rounds %}
+{% set latest = loop.last %}
+<details class="rr-round"{% if latest and rd.n_total <= 5 %} open{% endif %}>
+  <summary>
+    <svg class="ico rr-chevron" aria-hidden="true"><use href="#i-chev"/></svg>
+    <span class="rr-no">{{ rd.rfq_no }}</span>
+    <span class="rr-count"><strong>{{ rd.n_replied }}</strong> of {{ rd.n_total }} replied</span>
+    {% if rd.lowest is not none %}<span class="rr-low">Lowest <strong>{{ rd.lowest|peso }}</strong><span class="rr-by">{{ rd.lowest_supplier }}</span></span>{% endif %}
+    {% if rd.reply_deadline %}<span class="rr-deadline">Reply by {{ rd.reply_deadline|day }}</span>{% endif %}
+    <span class="rr-open">
+      <a class="rr-link" href="{{ url_for('purchasing.rfq_detail', ref_id=ref_id, rfq_id=rd.rfq_id) }}">Open RFQ</a>
+      <a class="rr-link" href="{{ url_for('documents.pdf', doc_type='RFQ', doc_id=rd.rfq_id) }}" download>PDF</a>
+    </span>
+  </summary>
+  <div class="table-wrap">{{ replies_table(rd, ref_id, can_quote and latest) }}</div>
+</details>
+{% else %}
+<p class="muted">No RFQ yet. Create one, or use a regular supplier's agreed price.</p>
+{% endfor %}
+{% endmacro %}

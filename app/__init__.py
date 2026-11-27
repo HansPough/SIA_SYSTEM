@@ -79,6 +79,7 @@ def create_app():
 
     @app.context_processor
     def inject_layout():
+        from .nav_ops import BELL_WORDS
         role = session.get("role")
         # Pick the most specific menu URL so detail and edit screens keep their
         # parent navigation item highlighted (including nested create pages).
@@ -100,7 +101,7 @@ def create_app():
                 groups[-1]["items"].append((label, endpoint))
         for g_ in groups:
             g_["count"] = sum(counts.get(endpoint, 0) for _l, endpoint in g_["items"])
-        attention = [(label, endpoint, counts[endpoint]) for label, endpoint in entries
+        attention = [(BELL_WORDS.get(endpoint, label), endpoint, counts[endpoint]) for label, endpoint in entries
                      if label != "--" and counts.get(endpoint)]
         return {
             "asset_versions": asset_versions,
@@ -194,6 +195,24 @@ def create_app():
             return "{:,.2f}".format(float(value or 0))
         except (TypeError, ValueError):
             return "" if value is None else str(value)
+
+    @app.template_filter("peso")
+    def peso_filter(value):
+        """A price with its currency, for the places where the amount is the point (quotes)."""
+        try:
+            return "\u20b1{:,.2f}".format(float(value))
+        except (TypeError, ValueError):
+            return "\u2013"
+
+    @app.template_filter("day")
+    def day_filter(value):
+        """'Nov 25', or 'Nov 25, 2025' when it is not this year. A dash for nothing."""
+        text = str(value or "")[:10]
+        try:
+            d = datetime.date.fromisoformat(text)
+        except ValueError:
+            return "\u2013"
+        return d.strftime("%b ") + str(d.day) + ("" if d.year == datetime.date.today().year else ", %d" % d.year)
 
     @app.errorhandler(400)
     def bad_request(_e):

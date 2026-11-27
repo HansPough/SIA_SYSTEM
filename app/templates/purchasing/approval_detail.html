@@ -9,7 +9,7 @@
 <dl class="info">
   <div><dt>REF no.</dt><dd><a href="{{ url_for('purchasing.ref_detail', ref_id=appr.ref_id) }}">{{ appr.ref_no }}</a></dd></div>
   <div><dt>Suppliers</dt><dd>{{ appr.batch|length }}</dd></div>
-  <div><dt>Total</dt><dd>{{ appr.batch_total|money }}</dd></div>
+  <div><dt>Total</dt><dd><strong>{{ appr.batch_total|peso }}</strong></dd></div>
   <div><dt>Submitted by</dt><dd>{{ appr.submitted_by_name }}, {{ (appr.submitted_at|string)[:10] }}</dd></div>
 </dl>
 </div>
@@ -17,7 +17,7 @@
 <div class="note">
   <strong>The decision is yours.</strong> The warehouse manager picked these suppliers as a recommendation.
   Approve each one to create its purchase order, or reject it and the items go back to the warehouse manager.
-  Where a cheaper offer was not chosen, it is listed so you can see what was passed over.
+  Under each item, the chosen price is shown against every other offer. If a cheaper offer was passed over, that comparison opens by itself.
 </div>
 
 <form method="post">
@@ -27,27 +27,53 @@
     {{ m.status(b.decision) }}</h2>
   <p class="muted">{{ 'Agreed price (regular supplier)' if b.basis == 'agreed_price' else 'Mixed: quotation and agreed price' if b.basis == 'mixed' else 'Quotation' ~ (' ' ~ b.quotation_ref if b.quotation_ref else '') }}</p>
   <div class="table-wrap"><table class="data">
-  <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th><th>How this compares</th></tr></thead>
+  <caption class="sr-only">Items {{ b.supplier_name }} was chosen for</caption>
+  <thead><tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Unit price</th><th scope="col" class="num">Amount</th></tr></thead>
   <tbody>
   {% for l in b.lines %}
   {% set c = l.compare %}
-  <tr><td>{{ l.item_name }}</td><td class="num">{{ l.qty }}</td>
-  <td class="num">{{ l.unit_price|money }}</td><td class="num">{{ l.amount|money }}</td>
-  <td>
-    {% if c and c.mine %}
-      <span class="chips">{{ m.medal(c.mine.rank) }}{% if c.mine.fastest %}<span class="chip chip-fast">{{ m.icon('bolt') }}Fastest</span>{% endif %}{% if c.mine.only_offer %}<span class="chip">Only offer</span>{% endif %}{% if c.mine.kind == 'agreed_price' %}<span class="chip">Agreed price</span>{% endif %}</span>
-      <small class="muted">{{ c.n_offers }} offer{{ 's' if c.n_offers != 1 }} compared</small>
-    {% elif c %}<small class="muted">{{ c.n_offers }} offer{{ 's' if c.n_offers != 1 }} compared</small>{% else %}<small class="muted">&ndash;</small>{% endif %}
-    {% if c and c.cheaper %}
-    <div class="cheaper"><strong>Cheaper offers not chosen:</strong>
-      {% for o in c.cheaper %}<span>{{ o.supplier_name }} {{ o.unit_price|money }}{% if o.lead is not none %}, {{ o.lead }} day{{ 's' if o.lead != 1 }}{% endif %}{% if not o.covers %}, short by {{ o.short }}{% endif %}</span>{% endfor %}
-    </div>
-    {% endif %}
+  <tr><th scope="row" class="cmp-item">{{ l.item_name }}{% if c and c.only_offer %}<small>Only offer received</small>{% endif %}</th>
+    <td class="num">{{ l.qty }}</td><td class="num">{{ l.unit_price|peso }}</td><td class="num"><strong>{{ l.amount|peso }}</strong></td></tr>
+  {% if c and c.n_offers > 1 %}
+  <tr class="cmp-row"><td colspan="4">
+    <details class="cmp"{% if c.n_cheaper %} open{% endif %}>
+      <summary>
+        <svg class="ico rr-chevron" aria-hidden="true"><use href="#i-chev"/></svg>
+        {% if c.n_cheaper %}<span class="cmp-flag is-warn">{{ c.n_cheaper }} cheaper offer{{ 's' if c.n_cheaper != 1 }} not chosen</span>
+        {% else %}<span class="cmp-flag is-ok">Lowest of {{ c.n_offers }} offers</span>{% endif %}
+        <span class="cmp-toggle">Compare offers</span>
+      </summary>
+      <table class="rr-table cmp-table">
+        <caption class="sr-only">All offers for {{ l.item_name }}, {{ l.qty }} units</caption>
+        <thead><tr>
+          <th scope="col">Supplier</th><th scope="col">Basis</th><th scope="col" class="num">Unit price</th>
+          <th scope="col" class="num">Lead time</th><th scope="col" class="num">Total for {{ l.qty }}</th><th scope="col" class="num">Against chosen</th>
+        </tr></thead>
+        <tbody>
+        {% for o in c.offers %}
+        <tr{% if o.chosen %} class="is-chosen" aria-current="true"{% endif %}>
+          <th scope="row">{{ o.supplier_name }}{% if not o.covers %}<span class="cmp-short">Can supply {{ o.max_qty }}, short by {{ o.short }}</span>{% endif %}</th>
+          <td class="cmp-basis" data-label="Basis">{{ 'Agreed price' if o.agreed else 'Quotation' }}</td>
+          <td class="num" data-label="Unit price"><strong>{{ o.unit_price|peso }}</strong></td>
+          <td class="num" data-label="Lead time">{% if o.lead is not none %}{{ o.lead }} day{{ 's' if o.lead != 1 }}{% else %}&ndash;{% endif %}</td>
+          <td class="num" data-label="Total for {{ l.qty }}">{{ o.total|peso }}</td>
+          <td class="num" data-label="Against chosen">
+            {% if o.chosen %}<span class="rr-tag is-ink">Chosen</span>
+            {% elif o.cheaper %}<span class="cmp-vs is-cheaper">&minus;{{ o.diff|peso }} <small>({{ o.diff_pct }}%)</small></span>
+            {% elif o.dearer %}<span class="cmp-vs is-dearer">+{{ o.diff|peso }} <small>({{ o.diff_pct }}%)</small></span>
+            {% else %}<span class="cmp-vs">Same price</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
   </td></tr>
+  {% endif %}
   {% else %}
-  <tr><td colspan="5" class="muted">No priced lines.</td></tr>
+  <tr><td colspan="4" class="muted">No priced lines.</td></tr>
   {% endfor %}
-  <tr><td colspan="3" class="num"><strong>Total</strong></td><td class="num"><strong>{{ b.total|money }}</strong></td><td></td></tr>
+  <tr class="cmp-total"><td colspan="3" class="num"><strong>Total</strong></td><td class="num"><strong>{{ b.total|peso }}</strong></td></tr>
   </tbody>
   </table></div>
   {% if b.decision == 'pending' %}

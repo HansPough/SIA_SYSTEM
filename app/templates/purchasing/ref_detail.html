@@ -72,30 +72,8 @@
 {% if ref.partly_ordered %}<p class="note">Some items are still open.</p>{% endif %}
 
 <h2>RFQs and quotations</h2>
-<div class="table-wrap"><table class="data">
-<thead><tr><th>RFQ no.</th><th>Suppliers and replies</th><th></th></tr></thead>
-<tbody>
-{% for rfq_no, rows in ref.rfq_rows|groupby('rfq_no') %}
-<tr><td class="nowrap">{{ rfq_no }}</td>
-<td>
-  {% for r in rows %}
-  <div>{{ r.supplier_name }} &mdash;
-    {% if r.sent_at %}sent {{ (r.sent_at|string)[:10] }}{% else %}not recorded as sent{% endif %}
-    {% if r.replied_at %} &middot; replied {{ (r.replied_at|string)[:10] }}{% else %} &middot; no reply yet{% endif %}
-    {% if r.quotation_id %}
-      {% if r.n_live_lines %}{% if r.total_quoted is not none %} &middot; {{ r.total_quoted|money }}{% endif %}
-      {% else %} &middot; replaced by a later quotation{% endif %}
-    {% endif %}
-  </div>
-  {% endfor %}
-</td>
-<td class="nowrap"><a class="btn small" href="{{ url_for('purchasing.rfq_detail', ref_id=ref.id, rfq_id=rows[0].rfq_id) }}">{{ m.icon('file') }}Open RFQ</a>
-  <a class="btn small" href="{{ url_for('documents.pdf', doc_type='RFQ', doc_id=rows[0].rfq_id) }}" download>{{ m.icon('down') }}PDF</a></td></tr>
-{% else %}
-<tr><td colspan="3" class="muted">No RFQ yet. Create one, or use a regular supplier's agreed price.</td></tr>
-{% endfor %}
-</tbody>
-</table></div>
+{% import 'purchasing/_rfq_replies.html' as rr %}
+{{ rr.replies_rounds(ref.rfq_rounds, ref.id, current_role == 'warehouse_manager' and ref.status in ['submitted', 'rfq_sent']) }}
 
 {% if ref.approvals %}
 <h2>Suppliers and orders</h2>

@@ -9,6 +9,13 @@ from . import document_ops as docs
 from . import inventory_service as inv
 
 
+# What the bell says when the menu label alone would not tell you what is waiting.
+BELL_WORDS = {
+    "purchasing.po_list": "POs ready to send",
+    "purchasing.ref_list": "REFs ready for RFQ",
+}
+
+
 def _count(sql, **p):
     return inv.backend().one(sql, **p)["n"]
 
@@ -45,6 +52,8 @@ def counts(user):
         put("inventory.rfqueue_list", s["rf_queue"])
         put("documents.to_sign", len(docs.pending_signatures(user)))
         put("purchasing.alert_list", s["active_restock_alerts"])
+        put("purchasing.ref_list", s["refs_ready_for_rfq"])
+        put("purchasing.po_list", s["pos_ready_to_send"])
         put("delivery.transfer_list", s["transfers_to_move"])
         put("delivery.receiving_list", s["pos_waiting_delivery"])
         put("delivery.discrepancy_list", s["open_discrepancies"] + _open_variances(user))

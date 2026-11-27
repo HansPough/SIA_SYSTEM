@@ -31,23 +31,8 @@
 <div class="card no-print">
   <h2>Suppliers</h2>
   <p class="muted">Send each supplier their own copy. It is addressed to them and does not show who else was asked.</p>
-  <div class="table-wrap"><table class="data">
-    <thead><tr><th>Supplier</th><th>Reply</th><th class="num">Quoted</th><th></th></tr></thead>
-    <tbody>
-    {% for s in rfq.suppliers %}
-    <tr {% if supplier_id == s.supplier_id %}class="picked"{% endif %}>
-      <td>{{ s.supplier_name }}<small>{{ [s.contact_person, s.email]|select|join(' · ') or 'No contact saved' }}</small></td>
-      <td>{% if s.replied_at %}{{ m.status('received', label='Replied ' ~ (s.replied_at|string)[:10]) }}{% else %}{{ m.status('pending', label='Waiting') }}{% endif %}</td>
-      <td class="num">{{ s.total_quoted|money if s.quotation_id else '–' }}</td>
-      <td class="nowrap">
-        <a class="btn small" href="{{ url_for('purchasing.rfq_detail', ref_id=rfq.ref_id, rfq_id=rfq.id, supplier=s.supplier_id) }}">{{ m.icon('file') }}Copy</a>
-        <a class="btn small" href="{{ url_for('documents.pdf', doc_type='RFQ', doc_id=rfq.id, supplier=s.supplier_id) }}" download>{{ m.icon('down') }}PDF</a>
-        {% if can_quote %}<a class="btn small secondary" href="{{ url_for('purchasing.quotation_new', ref_id=rfq.ref_id, supplier_id=s.supplier_id) }}">{{ 'Edit reply' if s.replied_at else 'Record reply' }}</a>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table></div>
+  {% import 'purchasing/_rfq_replies.html' as rr %}
+  <div class="table-wrap">{{ rr.replies_table(rfq.round, rfq.ref_id, can_quote, true, supplier_id) }}</div>
 </div>
 
 <details class="card no-print" open><summary>RFQ details</summary>

@@ -94,6 +94,22 @@ class Base(unittest.TestCase):
         return {r["item_id"]: r["id"] for r in
                 self.be.all("SELECT id, item_id FROM replenishment_items WHERE ref_id = :r", r=ref_id)}
 
+    def qid(self, supplier):
+        return self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)["id"]
+
+    def choose(self, ref_id, **choices):
+        ids = self.line_ids(ref_id)
+        data = {}
+        for item, c in choices.items():
+            data["choice_%d" % ids[int(item)]] = c
+            data["qty_%d" % ids[int(item)]] = ""
+        self.login("whmgr")
+        return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data, follow_redirects=True)
+
+    def approve(self):
+        self.login("owner")
+        return self.c.post("/purchasing/approvals/%d" % self.approval_id(), data={"decision": "approve", "remarks": "ok"})
+
     def owner_approves_ref(self, ref_id, remarks=""):
         self.login("owner")
         return self.c.post("/purchasing/ref/%d" % ref_id, data={"action": "approve_ref", "remarks": remarks})
@@ -284,9 +300,11 @@ class RfqQuotationTests(Base):
         self.assertEqual(self.be.one("SELECT status FROM replenishments")["status"], "rfq_sent")
         self.login("whmgr")
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
-        self.assertIn("Suppliers and replies", page)
-        # one row for the RFQ, with both suppliers inside it (not one row per supplier)
-        self.assertEqual(page.count('<td class="nowrap">%s</td>' % rfq["rfq_no"]), 1)
+        # one block for the RFQ with both suppliers inside it, each fact in its own column
+        self.assertEqual(page.count('<span class="rr-no">%s</span>' % rfq["rfq_no"]), 1)
+        for column in ("Supplier", "Status", "Sent", "Replied", "Items", "Quote", "Actions"):
+            self.assertIn('scope="col"', page)
+            self.assertIn(">%s</th>" % column, page)
         self.assertIn("Sup A", page)
         self.assertIn("Sup B", page)
         # a second round is allowed while items still have no supplier (see SplitOrderingTests); once
@@ -359,7 +377,7 @@ class RfqQuotationTests(Base):
         self.assertAlmostEqual(float(self.be.one("SELECT total_amount FROM quotations WHERE id = :q",
                                                  q=first_q)["total_amount"]), 0.0, places=2)
         page = self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
-        self.assertIn("replaced by a later quotation", page)
+        self.assertIn('rr-state is-muted">Replaced', page)
         self.login("whmgr")
         compare = self.c.get("/purchasing/ref/%d/compare" % ref_id).get_data(as_text=True)
         self.assertIn("9.50", compare)
@@ -471,22 +489,6 @@ class RfqDocumentTests(Base):
             "reason[]": ["below_rop", "below_rop"], "action": "submit_ref"})
         self.send_rfq(self.ref_id())
         return self.ref_id()
-
-    def qid(self, supplier):
-        return self.be.one("SELECT id FROM quotations WHERE supplier_id = :s ORDER BY id DESC LIMIT 1", s=supplier)["id"]
-
-    def choose(self, ref_id, **choices):
-        ids = self.line_ids(ref_id)
-        data = {}
-        for item, c in choices.items():
-            data["choice_%d" % ids[int(item)]] = c
-            data["qty_%d" % ids[int(item)]] = ""
-        self.login("whmgr")
-        return self.c.post("/purchasing/ref/%d/compare" % ref_id, data=data, follow_redirects=True)
-
-    def approve(self):
-        self.login("owner")
-        return self.c.post("/purchasing/approvals/%d" % self.approval_id(), data={"decision": "approve", "remarks": "ok"})
 
     def setup_rfq(self, suppliers=(SUP_A, SUP_B)):
         self.make_ref()
@@ -865,27 +867,67 @@ class SupplierComparisonTests(Base):
         self.assertIn("You recommend, the owner decides", page)
         self.assertIn(">Send for approval</button>", page)
 
-    def test_the_owner_sees_how_the_chosen_price_compares_and_what_was_passed_over(self):
-        ref_id = self.two_offers()
+    def owner_page(self, ref_id, chosen_supplier):
         ids = self.line_ids(ref_id)
+        qid = self.be.one("SELECT id FROM quotations WHERE supplier_id = :s", s=chosen_supplier)["id"]
         self.login("whmgr")
-        # the manager recommends the dearer, faster supplier
-        self.c.post("/purchasing/ref/%d/compare" % ref_id,
-                    data={"choice_%d" % ids[A]: "q:%d" % self.be.one(
-                        "SELECT id FROM quotations WHERE supplier_id = :s", s=SUP_B)["id"]})
+        self.c.post("/purchasing/ref/%d/compare" % ref_id, data={"choice_%d" % ids[A]: "q:%d" % qid})
         self.login("owner")
         aid = self.be.one("SELECT id FROM purchase_approvals ORDER BY id LIMIT 1")["id"]
-        page = self.c.get("/purchasing/approvals/%d" % aid).get_data(as_text=True)
-        self.assertIn("The decision is yours", page)
-        self.assertIn("How this compares", page)
-        self.assertNotIn("2nd lowest", page)
-        self.assertIn("Fastest", page)                               # Sup B was the faster offer
-        self.assertIn("2 offers compared", page)
-        self.assertIn("Cheaper offers not chosen", page)
-        passed_over = page.split("Cheaper offers not chosen")[1]
-        self.assertIn("Sup A", passed_over)                           # the cheaper supplier that was not picked
-        self.assertIn("10.00", passed_over)
+        return self.c.get("/purchasing/approvals/%d" % aid).get_data(as_text=True)
 
+    def test_a_dearer_choice_opens_a_table_with_every_offer_in_its_own_columns(self):
+        page = self.owner_page(self.two_offers(), SUP_B)             # the manager recommends the dearer, faster supplier
+        self.assertIn("The decision is yours", page)
+        self.assertIn("1 cheaper offer not chosen", page)
+        self.assertIn('<details class="cmp" open>', page)             # a passed-over cheaper offer is not hidden
+        table = page[page.index('class="rr-table cmp-table"'):]
+        table = table[:table.index("</table>")]
+        for column in ("Supplier", "Basis", "Unit price", "Lead time", "Total for 20", "Against chosen"):
+            self.assertIn(">%s</th>" % column, table)
+        a = table[table.index('<th scope="row">Sup A'):]
+        a = a[:a.index("</tr>")]
+        self.assertIn("<strong>\u20b110.00</strong>", a)
+        self.assertIn("7 days", a)
+        self.assertIn("\u20b1200.00", a)                             # what 20 units would cost there
+        self.assertIn("&minus;\u20b12.00", a)                        # 2.00 less per unit than what was chosen
+        self.assertIn("(17%)", a)
+        b = table[table.index('<th scope="row">Sup B'):]
+        b = b[:b.index("</tr>")]
+        self.assertIn("Chosen", b)
+        self.assertIn('is-chosen', table)
+        self.assertIn("<strong>\u20b112.00</strong>", b)
+        # nothing is run together into one sentence any more
+        self.assertNotIn("Cheaper offers not chosen", page)
+        self.assertEqual(len(re.findall(r'<th scope="row">Sup [AB]', table)), 2)
+
+    def test_choosing_the_lowest_says_so_and_folds_the_table(self):
+        page = self.owner_page(self.two_offers(), SUP_A)
+        self.assertIn("Lowest of 2 offers", page)
+        self.assertNotIn("cheaper offer not chosen", page)
+        self.assertNotIn("cheaper offers not chosen", page)
+        self.assertIn('<details class="cmp">', page)                  # folded: nothing was passed over
+        self.assertIn("+\u20b12.00", page)                           # Sup B would have cost 2.00 more
+
+    def test_a_cheaper_offer_that_cannot_cover_the_quantity_says_by_how_much(self):
+        self.make_ref(qty=20)
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])
+        self.quote(ref_id, SUP_B, lines=[(A, 8, "6.00", 3)])         # cheaper, but only 8 of 20
+        page = self.owner_page(ref_id, SUP_A)
+        self.assertIn("Can supply 8, short by 12", page)
+        self.assertIn("&minus;\u20b14.00", page)
+
+    def test_an_only_offer_has_no_comparison_table(self):
+        from app import purchasing_ops as pur
+        line = {"qty": 20, "unit_price": "10.00"}
+        only = pur._offer_vs_chosen("Sup A", False, "10.00", 7, 20, 20, pur._dec("10.00"), True)
+        self.assertTrue(only["chosen"])
+        self.assertFalse(only["cheaper"] or only["dearer"])
+        self.assertIsNone(only["diff"])
+        other = pur._offer_vs_chosen("Sup B", True, "12.50", None, 20, 20, pur._dec("10.00"), False)
+        self.assertEqual((other["diff"], other["diff_pct"], other["dearer"]), ("2.50", 25, True))
 
 class NotOfferedLineTests(Base):
     """A supplier that does not offer an item: quantity 0, and no price needed."""
@@ -934,6 +976,165 @@ class NotOfferedLineTests(Base):
         js = self.c.get("/static/js/app.js").get_data(as_text=True)
         self.assertIn('removeAttribute("min")', js)
         self.assertIn("line-off", js)
+
+
+class RfqRepliesTests(Base):
+    """The replies area: a summary line per RFQ, and one aligned row per supplier."""
+
+    def rfq_with_replies(self):
+        self.make_ref(qty=20)
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])
+        return ref_id
+
+    def ref_page(self, ref_id):
+        self.login("whmgr")
+        return self.c.get("/purchasing/ref/%d" % ref_id).get_data(as_text=True)
+
+    @staticmethod
+    def replies_area(page):
+        return page.split("RFQs and quotations")[1].split('<details class="card')[0].split("<h2>")[0]
+
+    def rfq_id(self):
+        return self.be.one("SELECT id FROM rfqs ORDER BY id DESC LIMIT 1")["id"]
+
+    def two_item_ref(self):
+        self.login("whmgr")
+        self.c.post("/purchasing/ref/new", data={
+            "remarks": "x", "item_id[]": [str(A), str(B)], "qty_requested[]": ["20", "10"],
+            "reason[]": ["below_rop", "below_rop"], "action": "submit_ref"})
+        self.send_rfq(self.ref_id())
+        return self.ref_id()
+
+    def test_the_summary_line_counts_replies_and_names_the_lowest_quote(self):
+        page = self.ref_page(self.rfq_with_replies())
+        self.assertIn("<strong>1</strong> of 2 replied", page)
+        self.assertIn("Lowest <strong>\u20b1200.00</strong>", page)
+        self.assertIn('<span class="rr-by">Sup A</span>', page)
+
+    def test_every_fact_has_its_own_cell_and_the_quote_carries_the_currency(self):
+        page = self.ref_page(self.rfq_with_replies())
+        a = page[page.index("<th scope=\"row\"><span class=\"rr-name\">Sup A"):]
+        a = a[:a.index("</tr>")]
+        self.assertIn('rr-state is-replied">Replied', a)
+        self.assertIn('data-label="Sent"', a)
+        self.assertIn('data-label="Replied"', a)
+        self.assertIn("<strong>\u20b1200.00</strong>", a)                   # bold, with the peso sign
+        self.assertIn("1 of 1", a)
+        b = page[page.index("<th scope=\"row\"><span class=\"rr-name\">Sup B"):]
+        b = b[:b.index("</tr>")]
+        self.assertIn('rr-state is-waiting">No reply', b)                    # the one who has not answered
+        self.assertIn('class="rr-none">&ndash;', b)                          # no quote to show
+        self.assertNotIn("\u20b1", b)
+        self.assertNotIn(" &middot; ", self.replies_area(page))                  # no more text blob
+
+    def test_dates_are_short_and_a_waiting_supplier_has_no_reply_date(self):
+        from datetime import date
+        page = self.ref_page(self.rfq_with_replies())
+        today = date.today()
+        short = today.strftime("%b ") + str(today.day)
+        self.assertIn(">%s<" % short, page)                                  # "Nov 26", not 2026-11-26
+        self.assertNotIn(today.isoformat(), self.replies_area(page))
+
+    def test_a_quote_that_covers_only_some_items_is_flagged_and_never_called_lowest(self):
+        ref_id = self.two_item_ref()
+        self.quote(ref_id, SUP_A, lines=[(A, 20, "10.00", 7)])               # 1 of 2 items: a small total
+        self.quote(ref_id, SUP_B, lines=[(A, 20, "12.00", 3), (B, 10, "20.00", 3)])
+        page = self.ref_page(ref_id)
+        self.assertIn("is-partial", page)
+        self.assertIn("1 of 2", page)
+        self.assertIn("Lowest <strong>\u20b1440.00</strong>", page)              # Sup B: the only full quote
+        self.assertIn('<span class="rr-by">Sup B</span>', page)
+        a = page[page.index('rr-name">Sup A'):]
+        self.assertNotIn("Lowest</span>", a[:a.index("</tr>")])
+
+    def test_a_round_with_many_suppliers_starts_folded_and_a_small_one_starts_open(self):
+        ref_id = self.rfq_with_replies()
+        self.assertIn('<details class="rr-round" open>', self.ref_page(ref_id))
+        from app import purchasing_ops as pur
+        many = [{"supplier_id": i, "supplier_name": "S%d" % i, "sent_at": None, "replied_at": None, "total_quoted": None,
+                 "quotation_id": None, "n_live_lines": 0} for i in range(6)]
+        rd = pur._rfq_round({"rfq_id": 1, "rfq_no": "RFQ-X"}, many, 1)
+        self.assertEqual((rd["n_total"], rd["n_replied"], rd["lowest"]), (6, 0, None))
+
+    def test_the_table_is_labelled_for_screen_readers_and_the_rfq_page_shares_it(self):
+        ref_id = self.rfq_with_replies()
+        page = self.ref_page(ref_id)
+        self.assertIn('<caption class="sr-only">Suppliers asked to quote on', page)
+        self.assertIn('scope="row"', page)
+        rfq_id = self.rfq_id()
+        self.login("whmgr")
+        rfq_page = self.c.get("/purchasing/ref/%d/rfq/%d" % (ref_id, rfq_id)).get_data(as_text=True)
+        self.assertIn('class="rr-table"', rfq_page)
+        self.assertIn(">Actions</th>", rfq_page)
+        self.assertIn("Record reply", rfq_page)
+        self.assertIn("<strong>\u20b1200.00</strong>", rfq_page)
+
+    def test_peso_and_day_filters(self):
+        app = self.app
+        peso, day = app.jinja_env.filters["peso"], app.jinja_env.filters["day"]
+        self.assertEqual(peso("130216"), "\u20b1130,216.00")
+        self.assertEqual(peso(None), "\u2013")
+        self.assertEqual(day(None), "\u2013")
+        self.assertEqual(day("2020-01-05"), "Jan 5, 2020")
+
+
+class ReadyForActionAlertTests(Base):
+    """After the owner approves, the next move is the warehouse manager's: they get a badge and a bell line."""
+
+    def bell(self, who="whmgr"):
+        self.login(who)
+        page = self.c.get("/").get_data(as_text=True)
+        rows = page[page.index('id="bell-panel"'):]
+        rows = rows[:rows.index("</details>")]
+        return {label.strip(): int(n) for label, n in re.findall(r'<span>([^<]+)</span><span class="attn-n">(\d+)</span>', rows)}
+
+    def test_an_approved_ref_alerts_the_manager_until_the_rfq_goes_out(self):
+        self.make_ref(approved=False)
+        ref_id = self.ref_id()
+        self.assertNotIn("REFs ready for RFQ", self.bell())      # still the owner's move
+        self.owner_approves_ref(ref_id)
+        self.assertEqual(self.bell()["REFs ready for RFQ"], 1)
+        self.send_rfq(ref_id)
+        self.assertNotIn("REFs ready for RFQ", self.bell())
+
+    def test_an_approved_po_alerts_the_manager_until_it_is_sent(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A)
+        self.choose(ref_id, **{str(A): "q:%d" % self.qid(SUP_A)})
+        self.assertNotIn("POs ready to send", self.bell())                 # waiting for the owner, not for the manager
+        self.approve()
+        self.assertEqual(self.bell()["POs ready to send"], 1)
+        po_id = self.be.one("SELECT id FROM purchase_orders")["id"]
+        self.login("whmgr")
+        self.c.post("/purchasing/po/%d" % po_id, data={"action": "mark_sent"})
+        self.assertEqual(self.be.one("SELECT status FROM purchase_orders")["status"], "sent")
+        self.assertNotIn("POs ready to send", self.bell())
+
+    def test_the_sidebar_shows_the_same_count_on_the_menu_item(self):
+        from app import nav_ops
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A)
+        self.choose(ref_id, **{str(A): "q:%d" % self.qid(SUP_A)})
+        self.approve()
+        with self.app.test_request_context():
+            counts = nav_ops.counts({"role": "warehouse_manager", "location_id": WH, "id": self.uid["whmgr"]})
+        self.assertEqual(counts.get("purchasing.po_list"), 1)
+
+    def test_only_the_managers_own_warehouse_is_counted_and_the_owner_is_not_told(self):
+        self.make_ref()
+        ref_id = self.ref_id()
+        self.send_rfq(ref_id)
+        self.quote(ref_id, SUP_A)
+        self.choose(ref_id, **{str(A): "q:%d" % self.qid(SUP_A)})
+        self.approve()
+        self.assertNotIn("POs ready to send", self.bell("owner"))
+        self.assertNotIn("POs ready to send", self.bell("shopmgr"))
 
 
 class ApprovalTests(Base):
